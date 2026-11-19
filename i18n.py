@@ -246,6 +246,21 @@ STRINGS = {
         "layers, per-layer files and assembly drawing.\n"
         "The drill map and inverted layers stay black & white.",
     ),
+    "opt_pdf_black": ("Noir des PDF noir et blanc", "Black of black & white PDFs"),
+    "opt_pdf_black_rgb": ("RVB (comme KiCad)", "RGB (as KiCad)"),
+    "opt_pdf_black_cmyk": ("CMJN : N 100 %, CMJ 0 %", "CMYK: K 100 %, CMY 0 %"),
+    "opt_pdf_black_tip": (
+        "Espace colorimétrique du noir des PDF en noir et blanc : tous les PDF en mode "
+        "« Noir et blanc », les couches inversées et le plan de perçage.\n"
+        "CMJN : le noir est écrit directement en C 0, M 0, J 0, N 100 % (le blanc en "
+        "aucune encre), sans profil couleur ; un logiciel comme Illustrator lit donc du noir "
+        "pur au lieu d'un noir quadri. Nécessite PyMuPDF.",
+        "Colour space of the black of black & white PDFs: every PDF in \"Black & white\" "
+        "mode, inverted layers and the drill map.\n"
+        "CMYK: black is written directly as C 0, M 0, Y 0, K 100 % (white as no ink), "
+        "without colour profile; editors such as Illustrator then read pure black instead "
+        "of a four-colour black. Requires PyMuPDF.",
+    ),
     # --- Messages --------------------------------------------------------
     "dlg_save_profile": ("Sauvegarder un profil", "Save a profile"),
     "dlg_load_profile": ("Charger un profil", "Load a profile"),
@@ -279,9 +294,11 @@ STRINGS = {
         "in the KICAD_RELEASE_WIZARD_PYTHON environment variable.",
     ),
     "msg_pymupdf_missing": (
-        "Le plan de perçage, l'inversion et la rotation des PDF nécessitent PyMuPDF, absent de :\n"
+        "Le plan de perçage, l'inversion, la rotation et le noir CMJN des PDF nécessitent "
+        "PyMuPDF, absent de :\n"
         "{python}\n\nL'installer avec :\n{python} -m pip install PyMuPDF",
-        "The drill map, PDF inversion and rotation require PyMuPDF, missing from:\n"
+        "The drill map, PDF inversion, rotation and CMYK black require PyMuPDF, missing "
+        "from:\n"
         "{python}\n\nInstall it with:\n{python} -m pip install PyMuPDF",
     ),
     "run_title": ("Kicad Release Wizard - Génération", "Kicad Release Wizard - Generation"),

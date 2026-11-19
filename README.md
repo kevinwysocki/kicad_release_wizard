@@ -65,7 +65,10 @@ spaces (on Windows its 8.3 short name is used automatically).
 - **BOM**: the fields found in the project's symbols plus KiCad's generated fields
   (`${ITEM_NUMBER}`, `${QUANTITY}`…). Tick the columns, edit their labels, choose the grouping
   fields and reorder them with *Move up / Move down*: table order = CSV column order.
-- **Options**: PDF/SVG rendering in colour (default layer colours) or black & white.
+- **Options**: PDF/SVG rendering in colour (default layer colours) or black & white, and the
+  black of black & white PDFs: RGB (as KiCad writes it) or CMYK with pure black
+  (C=M=Y=0, K=100 %, no colour profile), so DTP software such as Illustrator does not turn
+  it into a four-colour black.
 
 **Generate** writes the scripts and the jobset, then shows the `kicad-cli` output live.
 The DRC can take minutes on large boards (it is KiCad's own DRC, as in the PCB editor).

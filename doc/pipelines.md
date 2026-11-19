@@ -13,6 +13,16 @@ are a native jobset job (`pcb_gerbers`).
 
 <sub>Source: [diagrams/layers.puml](diagrams/layers.puml)</sub>
 
+**CMYK black** (Options tab, "Black of black & white PDFs" = CMYK): KiCad writes black &
+white PDFs with RGB black (`0 0 0 rg` / `RG`) and, after an inversion, RGB white. In CMYK
+mode `pdf_tools.to_cmyk_black()` rewrites these operators in the content streams of the
+pages and form XObjects: neutral colours become DeviceCMYK with C=M=Y=0 and K = 1 − grey
+level (black `0 0 0 1 k`, white `0 0 0 0 k`, the drill map's grey slots K 40 %). No colour
+profile is involved, so editors read pure K instead of converting RGB black to a rich
+four-colour black. Non-neutral colours are left untouched and logged. It applies to every
+PDF in black & white mode, and in colour mode to the inverted layers and the drill map
+(always black & white).
+
 Every plot uses `--drill-shape-opt 0`: KiCad's default draws the drill holes on each
 layer, which is not wanted in the layer files (the drill map shows the holes).
 

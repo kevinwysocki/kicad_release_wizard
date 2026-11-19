@@ -51,6 +51,7 @@ class Config:
         self.sch = Path(data["sch"]) if data.get("sch") else None
         self.cli = data["kicad_cli"]
         self.color_mode = data.get("color_mode", "color")
+        self.pdf_black = data.get("pdf_black", "rgb")
         self.drill_map_outline = bool(data.get("drill_map_outline", True))
         self.drill_map_sheet = bool(data.get("drill_map_sheet", False))
         self.layers = list(data.get("layers", []))
@@ -63,6 +64,14 @@ class Config:
     @property
     def bw_args(self):
         return ["--black-and-white"] if self.color_mode == "bw" else []
+
+
+def finish_bw_pdf(cfg, pdf):
+    """Black & white PDF: with the CMYK option, its black becomes C=M=Y=0, K=100 %."""
+    if cfg.pdf_black == "cmyk":
+        import pdf_tools
+
+        pdf_tools.to_cmyk_black(pdf, log=log)
 
 
 def run_cli(cfg, args, output=None):
@@ -139,6 +148,8 @@ def job_sch_pdf(cfg):
         raise RuntimeError("No .kicad_sch found")
     out = out_dir(cfg, "03_DOCS") / f"{cfg.project}-SCH.pdf"
     run_cli(cfg, ["sch", "export", "pdf", *cfg.bw_args, "--output", out, cfg.sch], out)
+    if cfg.color_mode == "bw":
+        finish_bw_pdf(cfg, out)
 
 
 def job_pcb_pdf(cfg):
@@ -158,6 +169,8 @@ def job_pcb_pdf(cfg):
          "--layers", ",".join(pages), "--output", out, cfg.pcb],
         out,
     )
+    if cfg.color_mode == "bw":
+        finish_bw_pdf(cfg, out)
 
 
 def job_implantation(cfg):
@@ -168,6 +181,9 @@ def job_implantation(cfg):
                   "--layers", "F.Fab,Edge.Cuts", "--output", top, cfg.pcb], top)
     run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", "--include-border-title", *NO_DRILL, *cfg.bw_args,
                   "--mirror", "--layers", "B.Fab,Edge.Cuts", "--output", bot, cfg.pcb], bot)
+    if cfg.color_mode == "bw":
+        finish_bw_pdf(cfg, top)
+        finish_bw_pdf(cfg, bot)
 
 
 def job_drill_map(cfg):
@@ -203,6 +219,7 @@ def job_drill_map(cfg):
             table_origin_mm=(20.0, 20.0) if cfg.drill_map_sheet else (10.0, 10.0),
             log=log,
         )
+        finish_bw_pdf(cfg, out)  # the drill map is always black & white
         log(f"[OK] {out}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -292,6 +309,8 @@ def export_layer_pdf(cfg, layer, sheet, edge, mirror, opts, final_pdf):
         if final_pdf.exists():
             final_pdf.unlink()
         shutil.copyfile(current, final_pdf)
+        if cfg.color_mode == "bw" or opts.get("invert_colors", False):
+            finish_bw_pdf(cfg, final_pdf)
         log(f"[OK] {final_pdf}")
     finally:
         if cfg.debug:

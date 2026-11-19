@@ -79,6 +79,8 @@ DEFAULT_LAYER_ORDER = [
 ]
 
 COLOR_MODES = ("color", "bw")
+# Colour space of the black of black & white PDFs.
+PDF_BLACKS = ("rgb", "cmyk")
 
 # Layers grid columns
 COL_EXPORT, COL_LAYER, COL_BACKGROUND, COL_EDGE, COL_MIRROR, COL_INVERT, COL_ROTATE = range(7)
@@ -302,6 +304,13 @@ class ReleaseWizardDialog(wx.Dialog):
             w.SetToolTip(tr("opt_color_mode_tip"))
         grid.Add(label, 0, wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self.color_mode, 1, wx.EXPAND)
+        label = wx.StaticText(panel, label=tr("opt_pdf_black"))
+        self.pdf_black = wx.Choice(panel, choices=[tr("opt_pdf_black_rgb"), tr("opt_pdf_black_cmyk")])
+        self.pdf_black.SetSelection(0)
+        for w in (label, self.pdf_black):
+            w.SetToolTip(tr("opt_pdf_black_tip"))
+        grid.Add(label, 0, wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self.pdf_black, 1, wx.EXPAND)
         outer = wx.BoxSizer(wx.VERTICAL)
         outer.Add(grid, 0, wx.ALL | wx.EXPAND, 10)
         panel.SetSizer(outer)
@@ -602,6 +611,9 @@ class ReleaseWizardDialog(wx.Dialog):
     def _color_mode(self):
         return COLOR_MODES[max(0, self.color_mode.GetSelection())]
 
+    def _pdf_black(self):
+        return PDF_BLACKS[max(0, self.pdf_black.GetSelection())]
+
     # ------------------------------------------------------------ profile
 
     def _profile_dict(self):
@@ -618,6 +630,7 @@ class ReleaseWizardDialog(wx.Dialog):
             "bom_fields": self._bom_rows(),
             "options": {
                 "color_mode": self._color_mode(),
+                "pdf_black": self._pdf_black(),
                 "drill_map_outline": bool(self.drill_map_outline.GetValue()),
                 "drill_map_sheet": bool(self.drill_map_sheet.GetValue()),
             },
@@ -678,6 +691,8 @@ class ReleaseWizardDialog(wx.Dialog):
         opts = data.get("options", {})
         if isinstance(opts, dict) and opts.get("color_mode") in COLOR_MODES:
             self.color_mode.SetSelection(COLOR_MODES.index(opts["color_mode"]))
+        if isinstance(opts, dict) and opts.get("pdf_black") in PDF_BLACKS:
+            self.pdf_black.SetSelection(PDF_BLACKS.index(opts["pdf_black"]))
         if isinstance(opts, dict) and "drill_map_outline" in opts:
             self.drill_map_outline.SetValue(bool(opts["drill_map_outline"]))
         if isinstance(opts, dict) and "drill_map_sheet" in opts:
@@ -737,9 +752,16 @@ class ReleaseWizardDialog(wx.Dialog):
         python, has_pymupdf = find_python()
         if not python:
             raise RuntimeError(tr("msg_python_not_found"))
-        needs_pymupdf = jobs.get("drill_map_pdf") or (
-            "pdf" in formats
-            and any(o["invert_colors"] or o["rotate_180"] for o in selected_layer_options)
+        # Black & white PDFs: all of them in black & white mode, else the inverted layers
+        # (and the drill map, checked on its own).
+        bw_pdfs = (
+            self._color_mode() == "bw"
+            and (("pdf" in formats) or any(jobs.get(j) for j in ("sch_pdf", "pcb_pdf", "pcb_implantation")))
+        ) or ("pdf" in formats and any(o["invert_colors"] for o in selected_layer_options))
+        needs_pymupdf = (
+            jobs.get("drill_map_pdf")
+            or ("pdf" in formats and any(o["invert_colors"] or o["rotate_180"] for o in selected_layer_options))
+            or (self._pdf_black() == "cmyk" and bw_pdfs)
         )
         if needs_pymupdf and not has_pymupdf:
             raise RuntimeError(tr("msg_pymupdf_missing", python=python))
@@ -764,6 +786,7 @@ class ReleaseWizardDialog(wx.Dialog):
                     "sch": str(self._sch_file() or ""),
                     "kicad_cli": cli,
                     "color_mode": self._color_mode(),
+                    "pdf_black": self._pdf_black(),
                     "drill_map_outline": bool(self.drill_map_outline.GetValue()),
                     "drill_map_sheet": bool(self.drill_map_sheet.GetValue()),
                     "layers": selected_layers,

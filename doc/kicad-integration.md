@@ -82,7 +82,7 @@ UI state, saved on *Generate* or with *Save profile*.
     { "field": "${ITEM_NUMBER}", "include": true, "label": "#", "group_by": false },
     { "field": "Value", "include": true, "label": "Value", "group_by": true }
   ],
-  "options": { "color_mode": "color", "drill_map_outline": true, "drill_map_sheet": false }
+  "options": { "color_mode": "color", "pdf_black": "rgb", "drill_map_outline": true, "drill_map_sheet": false }
 }
 ```
 
@@ -98,6 +98,7 @@ Settings of the job scripts, written on every *Generate*.
   "sch": "/path/to/project/my_board.kicad_sch",
   "kicad_cli": "/usr/bin/kicad-cli",
   "color_mode": "color",
+  "pdf_black": "rgb",
   "drill_map_outline": true,
   "drill_map_sheet": false,
   "layers": ["F.Cu", "B.Cu", "F.Mask"],

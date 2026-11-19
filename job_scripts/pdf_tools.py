@@ -3,12 +3,15 @@
 - invert_pdf: black/white inversion inside the real board outline (pcbnew polygons,
   internal cut-outs included), with an optional overlay drawn on top unchanged.
 - rotate_pdf_180: 180 degree rotation baked into the page content.
+- to_cmyk_black: black & white PDF rewritten in pure CMYK black (C=M=Y=0, K=100 %).
 
 Usable as a module (from release_jobs.py) or from the command line.
 """
 
 import argparse
 import json
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -194,6 +197,73 @@ def invert_pdf(mask_pdf, outline_json, output_pdf, mirror=False, overlay_pdf=Non
         output_pdf.unlink()
     out.save(str(output_pdf), garbage=4, deflate=True)
     out.close()
+
+
+# ------------------------------------------------------------------- CMYK black
+
+_NUM = r"-?(?:\d+\.?\d*|\.\d+)"
+# "r g b rg" (fill) / "r g b RG" (stroke) and "v g" / "v G" (grey), not inside a longer token.
+_RGB_OP_RE = re.compile(rf"(?<![\w.\-])({_NUM})\s+({_NUM})\s+({_NUM})\s+(rg|RG)(?![\w])")
+_GRAY_OP_RE = re.compile(rf"(?<![\w.\-])({_NUM})\s+(g|G)(?![\w])")
+
+
+def _cmyk_k(level, op_is_fill):
+    """DeviceCMYK operator with C = M = Y = 0 and K = 1 - level (level: 0 black, 1 white)."""
+    k = max(0.0, min(1.0, 1.0 - level))
+    return f"0 0 0 {k:.4g} {'k' if op_is_fill else 'K'}"
+
+
+def to_cmyk_black(pdf_path, log=print):
+    """Rewrite the neutral colours of a black & white PDF as pure CMYK black.
+
+    Black (0 0 0 rg/RG) becomes C=M=Y=0, K=100 %; white and greys keep C=M=Y=0 with
+    K = 1 - grey level. Done in the content streams of the pages and of their form
+    XObjects, without any colour profile, so editors (e.g. Illustrator) read K only
+    instead of a rich four-colour black. Non-neutral colours are left untouched and
+    reported.
+    """
+    pdf_path = Path(pdf_path)
+    doc = fitz.open(str(pdf_path))
+    streams = set()
+    for page in doc:
+        streams.update(page.get_contents())
+    for xref in range(1, doc.xref_length()):
+        if doc.xref_is_stream(xref) and doc.xref_get_key(xref, "Subtype")[1] == "/Form":
+            streams.add(xref)
+
+    converted = 0
+    kept = 0
+
+    def rgb(m):
+        nonlocal converted, kept
+        r, g, b = (float(m.group(i)) for i in (1, 2, 3))
+        if abs(r - g) > 1e-3 or abs(g - b) > 1e-3:
+            kept += 1
+            return m.group(0)
+        converted += 1
+        return _cmyk_k(r, m.group(4) == "rg")
+
+    def gray(m):
+        nonlocal converted
+        converted += 1
+        return _cmyk_k(float(m.group(1)), m.group(2) == "g")
+
+    for xref in sorted(streams):
+        data = doc.xref_stream(xref)
+        if not data:
+            continue
+        text = data.decode("latin-1")
+        new = _GRAY_OP_RE.sub(gray, _RGB_OP_RE.sub(rgb, text))
+        if new != text:
+            doc.update_stream(xref, new.encode("latin-1"))
+
+    tmp = pdf_path.with_name(pdf_path.stem + "_cmyk.tmp.pdf")
+    doc.save(str(tmp), garbage=3, deflate=True)
+    doc.close()
+    os.replace(tmp, pdf_path)
+    log(f"CMYK: {converted} colour operators set to pure black (C=M=Y=0) in {pdf_path.name}")
+    if kept:
+        log(f"WARN CMYK: {kept} non-neutral colour(s) left unchanged in {pdf_path.name}")
 
 
 # ---------------------------------------------------------------------- rotation
