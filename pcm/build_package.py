@@ -8,8 +8,10 @@ Writes to dist/:
                                     (packages/<identifier>/metadata.json), with download_*
 - icon.png                          the 64x64 icon to submit next to it
 
-The archive is reproducible: sorted entries, fixed timestamps and LF line endings, so the
-same sources give the same SHA-256 on Windows, macOS, Linux and in CI.
+Entries are sorted, with fixed timestamps and LF line endings: the same sources and
+Python version give the same archive. The deflate output may differ between zlib versions,
+so the published SHA-256 is the one computed by the release workflow on the archive it
+publishes.
 """
 
 import argparse
@@ -46,8 +48,12 @@ ICON = "resources/icon_64.png"
 TEXT_SUFFIXES = {".py", ".json", ".txt", ".md", ""}
 FIXED_DATE = (2020, 1, 1, 0, 0, 0)
 
-# Rules of https://go.kicad.org/pcm/schemas/v1 and of the KiCad addons guide.
+# Rules of https://go.kicad.org/pcm/schemas/v2 and of the KiCad addons guide.
+SCHEMA = "https://go.kicad.org/pcm/schemas/v2"
 IDENTIFIER_RE = re.compile(r"^[a-zA-Z][-a-zA-Z0-9.]{0,98}[a-zA-Z0-9]$")
+LOWER_TOKEN_RE = re.compile(r"^[a-z][-a-z0-9]{0,48}[a-z0-9]$")  # type, tags, contact keys
+RESOURCE_KEY_RE = re.compile(r"^[a-zA-Z][-a-zA-Z0-9 ]{0,48}[a-zA-Z0-9]$")
+RUNTIMES = {"swig", "ipc"}
 VERSION_RE = re.compile(r"^\d{1,4}(\.\d{1,4}(\.\d{1,6})?)?$")
 KICAD_VERSION_RE = re.compile(r"^\d{1,2}(\.\d{1,2}(\.\d{1,2})?)?$")
 STATUSES = {"stable", "testing", "development", "deprecated"}
@@ -63,14 +69,29 @@ def validate(meta):
                 "author", "license", "resources", "versions"):
         if key not in meta:
             fail(f"metadata.json: missing '{key}'")
+    if meta.get("$schema") != SCHEMA:
+        fail(f"$schema must be {SCHEMA}")
     if not IDENTIFIER_RE.match(meta["identifier"]):
         fail(f"invalid identifier: {meta['identifier']}")
+    if not LOWER_TOKEN_RE.match(meta["type"]):
+        fail(f"invalid type: {meta['type']}")
+    if not str(meta["license"]).strip():
+        fail("license is empty")
+    for tag in meta.get("tags", []):
+        if not LOWER_TOKEN_RE.match(tag):
+            fail(f"invalid tag: {tag}")
+    for key in meta["resources"]:
+        if not RESOURCE_KEY_RE.match(key):
+            fail(f"invalid resources key: {key}")
     if len(meta["description"]) > 150:
         fail(f"description is {len(meta['description'])} characters (150 max)")
     if len(meta["description_full"]) > 5000:
         fail("description_full exceeds 5000 characters")
-    if not meta["author"].get("contact"):
-        fail("author.contact is required")
+    if not meta["author"].get("name") or not meta["author"].get("contact"):
+        fail("author.name and author.contact are required")
+    for key in meta["author"]["contact"]:
+        if not LOWER_TOKEN_RE.match(key):
+            fail(f"invalid author.contact key: {key}")
     for v in meta["versions"]:
         if not VERSION_RE.match(v.get("version", "")):
             fail(f"invalid version: {v.get('version')}")
@@ -79,6 +100,8 @@ def validate(meta):
         for key in ("kicad_version", "kicad_version_max"):
             if key in v and not KICAD_VERSION_RE.match(v[key]):
                 fail(f"invalid {key}: {v[key]}")
+        if "runtime" in v and v["runtime"] not in RUNTIMES:
+            fail(f"invalid runtime: {v['runtime']}")
 
 
 def read_source(path):

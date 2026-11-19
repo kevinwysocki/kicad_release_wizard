@@ -2,7 +2,7 @@
 
 The plugin is distributed through KiCad's **Plugin and Content Manager** (PCM).
 Reference: [KiCad addons guide](https://dev-docs.kicad.org/en/addons/) and the
-[PCM v1 schema](https://go.kicad.org/pcm/schemas/v1).
+[PCM v2 schema](https://go.kicad.org/pcm/schemas/v2).
 
 ![release](https://www.plantuml.com/plantuml/proxy?cache=no&fmt=svg&src=https://raw.githubusercontent.com/kevinwysocki/kicad_release_wizard/main/doc/diagrams/release.puml)
 
@@ -29,8 +29,10 @@ resources/icon.png       64×64 PCM icon
 metadata.json            template + version, without download_* keys
 ```
 
-The archive is reproducible (sorted entries, fixed timestamps, LF line endings): the same
-sources give the same SHA-256 locally and in CI.
+Entries are sorted, with fixed timestamps and LF line endings. The deflate output may still
+differ between zlib versions (a local build and the CI build of the same sources can have
+different SHA-256): the published `metadata.json` always carries the SHA-256 of the archive
+published next to it.
 
 ## Release procedure
 
@@ -60,7 +62,8 @@ sources give the same SHA-256 locally and in CI.
 |---|---|---|
 | `identifier` | `com.github.kevinwysocki.kicad-release-wizard` | GitHub-based reverse-DNS namespace; dash instead of underscore (identifier rules) |
 | `status` | `testing` | Until 1.0.0 |
-| `kicad_version` / `kicad_version_max` | `9.0` / `10.99` | Jobsets need KiCad 9; the SWIG bindings are planned for removal in KiCad 11 |
+| `$schema` | `v2` | Schema for KiCad 10+ packages |
+| `kicad_version` / `kicad_version_max` | `10.0` / `10.99` | Developed and tested on KiCad 10; the SWIG bindings are planned for removal in KiCad 11 |
 | `runtime` | `swig` | Action plugin on the `pcbnew` SWIG bindings; the plugin will move to the IPC API for KiCad 11 |
 | `license` | `MIT` | Open-source and GPL-compatible, as required for Python packages |
 | `description` | ≤ 150 characters | Addons guide limit (`build_package.py` checks it) |

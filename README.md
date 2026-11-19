@@ -13,7 +13,7 @@ Works on **Windows, macOS and Linux**.
 
 | Dependency | Version | Used for |
 |---|---|---|
-| [KiCad](https://www.kicad.org/) | 9.0+ (jobsets) | Host application, `kicad-cli` exports |
+| [KiCad](https://www.kicad.org/) | 10.0+ | Host application, `kicad-cli` exports |
 | [Python 3](https://www.python.org/) (system install) | 3.8+ | Job scripts copied to `<project>/.scripts/` |
 | [PyMuPDF](https://pymupdf.readthedocs.io/) | 1.23+ | Drill map, PDF inversion and 180° rotation |
 
@@ -83,11 +83,11 @@ Once listed in the KiCad Plugin and Content Manager, install it from there
 Copy (or clone) this folder into KiCad's plugin directory, then in the PCB editor:
 *Tools → External Plugins → Refresh Plugins*.
 
-| OS | Plugin directory (KiCad 9; use `10.0` for KiCad 10) |
+| OS | Plugin directory |
 |---|---|
-| Windows | `%USERPROFILE%\Documents\KiCad\9.0\scripting\plugins\` |
-| macOS | `~/Documents/KiCad/9.0/scripting/plugins/` |
-| Linux | `~/.local/share/kicad/9.0/scripting/plugins/` |
+| Windows | `%USERPROFILE%\Documents\KiCad\10.0\scripting\plugins\` |
+| macOS | `~/Documents/KiCad/10.0/scripting/plugins/` |
+| Linux | `~/.local/share/kicad/10.0/scripting/plugins/` |
 
 ## Output layout
 

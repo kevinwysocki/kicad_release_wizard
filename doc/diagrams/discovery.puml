@@ -7,7 +7,7 @@ partition "find_kicad_cli()" {
   (sys.executable folder, or KiCad.app/Contents/MacOS);
   :kicad-cli on PATH;
   :usual install folders
-  (Windows: Program Files\KiCad\10.0|9.0\bin,
+  (Windows: Program Files\KiCad\10.0\bin,
   macOS: /Applications/KiCad, Linux: /usr/bin, /usr/local/bin);
   :first existing file;
 }

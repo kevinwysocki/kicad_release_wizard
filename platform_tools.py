@@ -39,7 +39,7 @@ def find_kicad_cli():
         candidates.append(Path(which))
     if IS_WINDOWS:
         pf = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "KiCad"
-        candidates += [pf / v / "bin" / "kicad-cli.exe" for v in ("10.0", "9.0")]
+        candidates.append(pf / "10.0" / "bin" / "kicad-cli.exe")
     elif IS_MAC:
         candidates.append(Path("/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"))
     else:

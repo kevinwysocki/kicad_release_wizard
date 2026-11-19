@@ -26,12 +26,8 @@ def _chain_points(chain):
 def board_outline_polygons(board):
     """Return [{'outer': [...], 'holes': [[...], ...]}] for the board, in mm."""
     polyset = pcbnew.SHAPE_POLY_SET()
-    try:
-        # KiCad 10+: (outlines, aInferOutlineIfNecessary, ...)
-        ok = board.GetBoardPolygonOutlines(polyset, False)
-    except TypeError:
-        # KiCad 9: (outlines, aErrorHandler=None, ...)
-        ok = board.GetBoardPolygonOutlines(polyset)
+    # (outlines, aInferOutlineIfNecessary, ...): no inferred outline, Edge.Cuts only.
+    ok = board.GetBoardPolygonOutlines(polyset, False)
     if not ok:
         raise RuntimeError("Board outline (Edge.Cuts) is not a valid closed shape")
 

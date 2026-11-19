@@ -41,7 +41,7 @@ passes `--drill-shape-opt 0`.
 
 | API | Note |
 |---|---|
-| `BOARD.GetBoardPolygonOutlines()` | KiCad 10: `(outlines, aInferOutlineIfNecessary, …)`; KiCad 9: `(outlines, aErrorHandler=None, …)`. `board_outline.py` tries the KiCad 10 form, then the KiCad 9 one. |
+| `BOARD.GetBoardPolygonOutlines()` | KiCad 10 signature: `(outlines, aInferOutlineIfNecessary, …)`; called with `False` (Edge.Cuts only, no inferred outline). |
 | `pcbnew.LoadBoard()` | Used on the saved file (what `kicad-cli` plots), not on the board in memory. |
 | `BOARD.Save()` | Hung in a standalone KiCad Python during tests (probably a hidden message box); the wizard never saves boards. |
 | wxLog | KiCad's warnings (e.g. `Font 'X' not found; substituting …`) pop up as message boxes when a dialog runs: the plugin and `LoadBoard()` run under `wx.LogNull()`. |
