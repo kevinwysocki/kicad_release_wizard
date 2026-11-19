@@ -13,6 +13,9 @@ are a native jobset job (`pcb_gerbers`).
 
 <sub>Source: [diagrams/layers.puml](diagrams/layers.puml)</sub>
 
+Every plot uses `--drill-shape-opt 0`: KiCad's default draws the drill holes on each
+layer, which is not wanted in the layer files (the drill map shows the holes).
+
 Intermediate PDFs live in a temporary folder outside the work dir (KiCad copies the work
 dir as is) and are deleted at the end of each layer.
 
@@ -37,24 +40,34 @@ Why it works this way:
   whole: its outside part lands on white paper anyway, so the result is exact.
   "Touching" is tested on the item's bounding box: 9 sample points against the board
   region, plus any board vertex inside the box (thin items crossing a notch).
-- **Decor drawn on top.** The layer alone is inverted; the drawing layer and outline are
-  plotted separately and overlaid unchanged, so they are never inverted by mistake.
+- **Drawing sheet and outline left alone.** The drawing sheet (frame and title block) is
+  plotted with the layer, but drawings enclosing the whole board (the frame) are never
+  repainted; the outline (Edge.Cuts) is plotted separately and drawn on top unchanged.
 - Rendering at low resolution may show a hairline seam where white is redrawn over black
   (anti-aliasing); the geometry is identical and a RIP prints none.
 
-## Gerber extensions (`gerber_ext`)
+## File names (`fix_names`)
 
-Runs in the work dir of the Gerber outputs (`01_PCB_GRB` and the ZIP), right after the
-native Gerber and drill jobs, so the ZIP contains the normalised names too.
+Every generated file is named `<project>-<LAYER or FUNCTION>`. KiCad's native jobs mostly
+follow that rule (`<project>-F_Cu.gtl`, `<project>-job.gbrjob`, `<project>-PTH.drl`);
+`fix_names` runs last in the outputs holding Gerbers or position files (`01_PCB_GRB`, the Gerber ZIP, `02_PCBA`) and
+fixes the rest in the work dir, so the ZIP contains the final names too.
 
-![gerber-ext](https://www.plantuml.com/plantuml/proxy?cache=no&fmt=svg&src=https://raw.githubusercontent.com/kevinwysocki/kicad_release_wizard/main/doc/diagrams/gerber-ext.puml)
+![fix-names](https://www.plantuml.com/plantuml/proxy?cache=no&fmt=svg&src=https://raw.githubusercontent.com/kevinwysocki/kicad_release_wizard/main/doc/diagrams/fix-names.puml)
 
-<sub>Source: [diagrams/gerber-ext.puml](diagrams/gerber-ext.puml)</sub>
+<sub>Source: [diagrams/fix-names.puml](diagrams/fix-names.puml)</sub>
 
-Matching on the exact name after the `<project>-` prefix avoids false matches when the
-project name contains a layer word ("laptop" vs "top"). An extension that only differs by
-case (`.gbl` vs `.GBL`) is left as is: on case-insensitive file systems both are the same
-file.
+- Gerber extensions: lower-case Protel extensions, as KiCad writes them (KiCad already uses
+  them for the standard layers; inner power planes become `.gpN`). Matching on the exact
+  name after the `<project>-` prefix avoids false matches when the project name contains a
+  layer word ("laptop" vs "top").
+- The board outline is renamed from KiCad's `.gm1` (Protel "Mechanical 1") to `.gko`
+  (Protel / Altium "Keep-Out"), the board-outline extension fab houses list first. Only one
+  outline file is delivered.
+- Drill files need nothing: PTH and NPTH are separate files, `<project>-PTH.drl` and
+  `<project>-NPTH.drl`, so non-plated holes cannot be plated by mistake.
+- KiCad always appends `-all-pos` to the position file name: it is removed.
+- The Gerber job file lists the Gerber file names: it is updated after the renames.
 
 ## Other script jobs
 
@@ -62,11 +75,38 @@ file.
 |---|---|
 | `sch_pdf` | `sch export pdf [--black-and-white]` on the root schematic |
 | `pcb_pdf` | `pcb export pdf --mode-multipage --include-border-title`, pages = selected layers present in the board + Edge.Cuts |
-| `implantation` | `pcb export pdf --mode-single` twice: `F.Fab,Dwgs.User,Edge.Cuts` and mirrored `B.Fab,Dwgs.User,Edge.Cuts` |
-| `drill_map` | none: `drill_map_pdf.py` parses the `.kicad_pcb` and draws vertical drill marks (0.1 mm, 0.01 mm stroke) at absolute coordinates on the board's page size, plus Ø4 mm F.Cu camera fiducials |
+| `implantation` | `pcb export pdf --mode-single --include-border-title` twice: `F.Fab,Edge.Cuts` and mirrored `B.Fab,Edge.Cuts` |
+| `drill_map` | see [Drill map](#drill-map-drill_map) below |
 
 Black & white (`--black-and-white`) follows the colour mode of the Options tab, except
 inverted layers which are always black & white.
+
+## Drill map (`drill_map`)
+
+Built from KiCad's own outputs, so the map always matches the fabrication drill files.
+
+![drill-map](https://www.plantuml.com/plantuml/proxy?cache=no&fmt=svg&src=https://raw.githubusercontent.com/kevinwysocki/kicad_release_wizard/main/doc/diagrams/drill-map.puml)
+
+<sub>Source: [diagrams/drill-map.puml](diagrams/drill-map.puml)</sub>
+
+- **Holes**: parsed from the Excellon files (`T<n>C<diameter>` tools, `X…Y…` hits,
+  `X…Y…G85X…Y…` slots, Y negated back to board coordinates). PTH / NPTH comes from the file
+  function, vias from the `ViaDrill` tool attribute.
+- **Groups**: one per (plated, diameter, hole or slot), plated first then by diameter; each
+  group gets a symbol: `+`, `x`, circle, square, triangle, diamond, hexagon, inverted
+  triangle, then the same outlines with `+` and `x` inside (20 symbols, reused beyond).
+- **Symbols** are drawn at the hole centre, sized like the hole but kept between 0.6 and
+  2.5 mm; slots are also drawn as a grey stadium of the slot width.
+- **Drill table** at the top left (10 mm margins): symbol, diameter (mm), count, type
+  (`PTH`, `PTH via`, `PTH slot`, `NPTH`…) and total. A warning is logged when it overlaps
+  the board.
+- **Background** (Jobs tab options under the drill map), plotted by kicad-cli with
+  `--drill-shape-opt 0` (KiCad would otherwise draw filled drill marks under the symbols):
+  - *Show the board outline* (default): Edge.Cuts;
+  - *Add the drawing sheet*: frame and title block (`--include-border-title`); the table
+    then starts at 20 mm to stay inside the frame. Alone, it is plotted from a `User.N`
+    layer absent from the board, which gives the drawing sheet only;
+  - neither: only the page size is kept, the symbols stay at the same coordinates.
 
 ## BOM fields discovery (plugin side)
 

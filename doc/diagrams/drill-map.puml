@@ -1,0 +1,36 @@
+@startuml drill-map
+skinparam shadowing false
+start
+:kicad-cli pcb export drill
+excellon, mm, decimal, absolute origin,
+G85 slots, separate PTH / NPTH files;
+:kicad-cli pcb export pdf --drill-shape-opt 0
+layers: Edge.Cuts, or an unused User.N layer
+when only the drawing sheet is wanted
+[--include-border-title if "drawing sheet"];
+if (outline or drawing sheet?) then (no)
+  :keep the page size only
+  (blank page, same coordinates);
+endif
+:parse the Excellon files
+(tools, hits, slots, PTH / NPTH, via attribute);
+:group by plated, diameter, hole or slot
+(plated first, then by diameter);
+repeat :next group (symbol n);
+  repeat :next hole;
+    if (slot?) then (yes)
+      :grey stadium of the slot width;
+    endif
+    :symbol n at the hole centre
+    (size = diameter, 0.6 to 2.5 mm);
+  repeat while (more holes?)
+repeat while (more groups?)
+:drill table at the top left (20 mm inside the
+frame with the drawing sheet, 10 mm otherwise)
+symbol, diameter, count, type, total;
+if (table overlaps the board?) then (yes)
+  :log a warning;
+endif
+:save <project>-DRILL_MAP.pdf;
+stop
+@enduml

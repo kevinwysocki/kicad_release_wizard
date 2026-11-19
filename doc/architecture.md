@@ -31,7 +31,7 @@ re-run without the plugin (`kicad-cli jobset run --file release/kicad_release.ki
 | `i18n.py` | KiCad | French / English strings, language detection |
 | `job_scripts/release_jobs.py` | System Python | Job runner: one sub-command per script step |
 | `job_scripts/pdf_tools.py` | System Python | PDF inversion inside the board outline, 180° rotation (PyMuPDF) |
-| `job_scripts/drill_map_pdf.py` | System Python | Vector drill map from the `.kicad_pcb` file (PyMuPDF) |
+| `job_scripts/drill_map_pdf.py` | System Python | Drill map: symbols per drill size and drill table, from KiCad's Excellon files (PyMuPDF) |
 | `resources/` | — | Logo and its generator |
 
 The plugin never imports `job_scripts/`: these files are copied to `<project>/.scripts/`
@@ -54,29 +54,29 @@ Native jobs are configured in the jobset; *script* jobs are `special_execute` st
 
 <sub>Source: [diagrams/jobset.puml](diagrams/jobset.puml)</sub>
 
-`01_PCB_LAYERS` exists only when PDF, SVG or DXF is ticked in the Layers tab; the Gerber
-jobs and the `GERBER` ZIP only when the Gerber format is ticked (and the ZIP job for the
-archive).
+`01_PCB_LAYERS` exists only with the *One file per layer* job and PDF, SVG or DXF ticked in
+the Layers tab; the Gerber jobs and the `GERBER` ZIP only with that job and the Gerber format
+(and the ZIP job for the archive).
 
 | Job id | Kind | Produces |
 |---|---|---|
-| `erc` | native `sch_erc` | `<project>_ERC.txt` |
-| `drc` | native `pcb_drc` | `<project>_DRC.txt` (with schematic parity) |
-| `sch_pdf` | script `sch_pdf` | `<project>_SCH.pdf` |
-| `pcb_pdf` | script `pcb_pdf` | `<project>_PCB.pdf`, one page per selected layer + Edge.Cuts |
-| `pcb_layers` | script `layers` | `PDF/`, `SVG/`, `DXF/<layer>.*`, one file per layer and format |
-| `drill_map_pdf` | script `drill_map` | `PDF/<project>_DRILL_MAP.pdf` |
-| `pcb_implantation` | script `implantation` | `<project>_IMPLANT_TOP.pdf`, `_IMPLANT_BOT.pdf` |
-| `bom_csv` | native `sch_export_bom` | `<project>_BOM.csv` |
-| `pnp_csv` | native `pcb_export_pos` | `<project>_POS*.csv` |
-| `pcb_drill` | native `pcb_export_drill` | `<project>.drl` |
+| `erc` | native `sch_erc` | `<project>-ERC.txt` |
+| `drc` | native `pcb_drc` | `<project>-DRC.txt` (with schematic parity) |
+| `sch_pdf` | script `sch_pdf` | `<project>-SCH.pdf` |
+| `pcb_pdf` | script `pcb_pdf` | `<project>-PCB.pdf`, one page per selected layer + Edge.Cuts |
+| `pcb_layers` | script `layers` | `PDF/`, `SVG/`, `DXF/<project>-<layer>.*`, one file per layer and format |
+| `drill_map_pdf` | script `drill_map` | `PDF/<project>-DRILL_MAP.pdf` |
+| `pcb_implantation` | script `implantation` | `<project>-IMPLANT_TOP.pdf`, `-IMPLANT_BOT.pdf` |
+| `bom_csv` | native `sch_export_bom` | `<project>-BOM.csv` |
+| `pnp_csv` | native `pcb_export_pos` | `<project>-POS.csv` (KiCad's `-all-pos` suffix removed by `fix_names`) |
+| `pcb_drill` | native `pcb_export_drill` | `<project>-PTH.drl`, `<project>-NPTH.drl` |
 | `pcb_gerbers` | native `pcb_export_gerbers` | one Gerber per selected layer + Edge.Cuts, job file |
-| `pcb_gerber_extensions` | script `gerber_ext` | renames Gerbers in the work dir, `.GKO` → `.GM1` copy |
-| `meca_step` | native `pcb_export_3d` | `<project>_STEP.step` |
+| `fix_names` | script `fix_names` | last job of the GRB, ZIP and PCBA outputs: Gerber extensions (outline `.gm1` → `.gko`), `.gbrjob` kept in sync, `-all-pos` suffix removed |
+| `meca_step` | native `pcb_export_3d` | `<project>-3D.step` |
 
 Script jobs write into `$JOBSET_OUTPUT_WORK_PATH`, like native jobs, so KiCad copies or
 zips their files with the rest of the output. Each one also writes `<job>.log` there
-(except `gerber_ext`, whose folder ends up in the fab ZIP).
+(except `fix_names`, whose folder ends up in the fab ZIP).
 
 ## Plugin-side state
 

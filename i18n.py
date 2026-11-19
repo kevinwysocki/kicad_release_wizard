@@ -11,10 +11,6 @@ import os
 STRINGS = {
     # --- Dialog / header -------------------------------------------------
     "title": ("Kicad Release Wizard", "Kicad Release Wizard"),
-    "header": (
-        "Projet : {project}\nDossier : {folder}\nProfil : {profile}",
-        "Project: {project}\nFolder: {folder}\nProfile: {profile}",
-    ),
     "tab_jobs": ("Jobs", "Jobs"),
     "tab_layers": ("Couches", "Layers"),
     "tab_options": ("Options", "Options"),
@@ -23,118 +19,136 @@ STRINGS = {
     "btn_generate": ("Générer", "Generate"),
     "btn_close": ("Fermer", "Close"),
     # --- Jobs tab --------------------------------------------------------
-    "jobs_info": (
-        "Cocher les éléments à produire. Survoler une case pour plus de détails. "
-        "Tout est écrit dans le dossier release/ du projet.",
-        "Tick the items to produce. Hover a checkbox for details. "
-        "Everything is written to the project's release/ folder.",
+    "grp_rules": ("Règles de conception", "Design rules"),
+    "grp_schematic": ("Schématique", "Schematic"),
+    "grp_routing": ("Routage", "PCB layout"),
+    "grp_drilling": ("Perçage", "Drilling"),
+    "grp_bom": ("Nomenclature", "Bill of materials"),
+    "grp_fab": ("Fichiers de fabrication", "Fabrication files"),
+    "grp_meca": ("Mécanique", "Mechanical"),
+    "job_pcb_layers": ("Une couche par fichier", "One file per layer"),
+    "job_pcb_layers_tip": (
+        "Un fichier par couche cochée dans l'onglet Couches, dans chacun des formats cochés "
+        "(Gerber, PDF, SVG, DXF) : release/01_PCB/GRB, PDF, SVG, DXF.\n"
+        "Décoché : aucun fichier par couche, Gerbers compris.",
+        "One file per layer ticked in the Layers tab, in each ticked format "
+        "(Gerber, PDF, SVG, DXF): release/01_PCB/GRB, PDF, SVG, DXF.\n"
+        "Unticked: no per-layer file at all, Gerbers included.",
     ),
     "job_erc": ("Vérification électrique du schéma (ERC)", "Schematic electrical rules check (ERC)"),
     "job_erc_tip": (
-        "Lance l'ERC sur le schéma et écrit le rapport <projet>_ERC.txt dans release/03_DOCS.\n"
+        "Lance l'ERC sur le schéma et écrit le rapport <projet>-ERC.txt dans release/03_DOCS.\n"
         "Le job est en échec si des erreurs sont détectées.",
-        "Runs the ERC on the schematic and writes the report <project>_ERC.txt to release/03_DOCS.\n"
+        "Runs the ERC on the schematic and writes the report <project>-ERC.txt to release/03_DOCS.\n"
         "The job fails if errors are found.",
     ),
     "job_drc": ("Vérification des règles de conception du PCB (DRC)", "PCB design rules check (DRC)"),
     "job_drc_tip": (
         "Lance le DRC sur le PCB (y compris la cohérence schéma/PCB) et écrit le rapport "
-        "<projet>_DRC.txt dans release/03_DOCS.\n"
+        "<projet>-DRC.txt dans release/03_DOCS.\n"
         "Les zones ne sont pas recalculées. Le job est en échec si des erreurs sont détectées.",
         "Runs the DRC on the board (including schematic/PCB parity) and writes the report "
-        "<project>_DRC.txt to release/03_DOCS.\n"
+        "<project>-DRC.txt to release/03_DOCS.\n"
         "Zones are not refilled. The job fails if errors are found.",
     ),
-    "job_pcb_implantation": ("Plans d'assemblage (implantation) en PDF", "Assembly drawings (PDF)"),
+    "job_pcb_implantation": ("Fichier d'implantation (PDF)", "Assembly drawing (PDF)"),
     "job_pcb_implantation_tip": (
         "Deux PDF dans release/02_PCBA :\n"
-        " - <projet>_IMPLANT_TOP.pdf : F.Fab + fond de plan (Dwgs.User) + contour (Edge.Cuts)\n"
-        " - <projet>_IMPLANT_BOT.pdf : B.Fab, vue en miroir\n"
+        " - <projet>-IMPLANT_TOP.pdf : F.Fab + contour (Edge.Cuts), avec cadre et cartouche\n"
+        " - <projet>-IMPLANT_BOT.pdf : B.Fab, vue en miroir\n"
         "Rendu couleur ou noir et blanc selon l'onglet Options.",
         "Two PDFs in release/02_PCBA:\n"
-        " - <project>_IMPLANT_TOP.pdf: F.Fab + drawing layer (Dwgs.User) + outline (Edge.Cuts)\n"
-        " - <project>_IMPLANT_BOT.pdf: B.Fab, mirrored view\n"
+        " - <project>-IMPLANT_TOP.pdf: F.Fab + outline (Edge.Cuts), with frame and title block\n"
+        " - <project>-IMPLANT_BOT.pdf: B.Fab, mirrored view\n"
         "Colour or black & white depending on the Options tab.",
     ),
-    "job_sch_pdf": ("Schéma complet en PDF", "Full schematic (PDF)"),
+    "job_sch_pdf": ("Schéma en PDF", "Schematic (PDF)"),
     "job_sch_pdf_tip": (
-        "Toutes les feuilles du schéma dans <projet>_SCH.pdf (release/03_DOCS).\n"
+        "Toutes les feuilles du schéma dans <projet>-SCH.pdf (release/03_DOCS).\n"
         "Rendu couleur ou noir et blanc selon l'onglet Options.",
-        "All schematic sheets in <project>_SCH.pdf (release/03_DOCS).\n"
+        "All schematic sheets in <project>-SCH.pdf (release/03_DOCS).\n"
         "Colour or black & white depending on the Options tab.",
     ),
-    "job_pcb_pdf": ("PCB en un seul PDF (une page par couche)", "PCB as a single PDF (one page per layer)"),
+    "job_pcb_pdf": ("Fichier PDF avec toutes les couches", "Single PDF with all layers"),
     "job_pcb_pdf_tip": (
-        "<projet>_PCB.pdf dans release/03_DOCS, avec cartouche.\n"
+        "<projet>-PCB.pdf dans release/03_DOCS, avec cartouche.\n"
         "Une page par couche cochée dans l'onglet Couches, plus une page Edge.Cuts.",
-        "<project>_PCB.pdf in release/03_DOCS, with title block.\n"
+        "<project>-PCB.pdf in release/03_DOCS, with title block.\n"
         "One page per layer ticked in the Layers tab, plus an Edge.Cuts page.",
     ),
-    "job_drill_map_pdf": ("Plan de perçage en PDF", "Drill map (PDF)"),
+    "job_drill_map_pdf": ("Plan de perçage (PDF)", "Drill map (PDF)"),
     "job_drill_map_pdf_tip": (
-        "<projet>_DRILL_MAP.pdf dans release/01_PCB/PDF : un repère vectoriel par trou, "
-        "aux coordonnées absolues, plus les mires caméra (cercles F.Cu de Ø4 mm).\n"
-        "Nécessite Python 3 + PyMuPDF.",
-        "<project>_DRILL_MAP.pdf in release/01_PCB/PDF: one vector mark per hole at absolute "
-        "coordinates, plus camera fiducials (Ø4 mm F.Cu circles).\n"
-        "Requires Python 3 + PyMuPDF.",
+        "<projet>-DRILL_MAP.pdf dans release/01_PCB/PDF : contour de carte, un symbole par "
+        "diamètre de perçage (rond, croix, triangle…) et tableau de perçage en haut à gauche "
+        "(diamètre, nombre, PTH/NPTH, trous oblongs).\n"
+        "Établi à partir des fichiers Excellon de KiCad. Nécessite Python 3 + PyMuPDF.",
+        "<project>-DRILL_MAP.pdf in release/01_PCB/PDF: board outline, one symbol per drill "
+        "size (circle, cross, triangle…) and a drill table at the top left (diameter, count, "
+        "PTH/NPTH, slots).\n"
+        "Built from KiCad's Excellon files. Requires Python 3 + PyMuPDF.",
     ),
-    "job_bom_csv": ("Nomenclature (BOM) en CSV", "Bill of materials (BOM) as CSV"),
+    "opt_drill_map_outline": ("Afficher le contour de carte", "Show the board outline"),
+    "opt_drill_map_outline_tip": (
+        "Dessine le contour de carte (Edge.Cuts) sous les symboles de perçage.\n"
+        "Décoché : seuls les symboles et le tableau sont dessinés, à la même position sur "
+        "une page au format de la feuille KiCad.",
+        "Draws the board outline (Edge.Cuts) under the drill symbols.\n"
+        "Unticked: only the symbols and the table are drawn, at the same position on a page "
+        "of the KiCad sheet size.",
+    ),
+    "opt_drill_map_sheet": ("Ajouter le fond de plan", "Add the drawing sheet"),
+    "opt_drill_map_sheet_tip": (
+        "Ajoute le fond de plan (cadre et cartouche de la feuille KiCad), comme dans les PDF "
+        "des couches. Le tableau de perçage est alors décalé à l'intérieur du cadre.",
+        "Adds the drawing sheet (KiCad page frame and title block), as in the layer PDFs. "
+        "The drill table then moves inside the frame.",
+    ),
+    "job_bom_csv": ("Nomenclature (BOM, CSV)", "Bill of materials (BOM, CSV)"),
     "job_bom_csv_tip": (
-        "<projet>_BOM.csv dans release/02_PCBA, séparateur « ; », composants DNP exclus.\n"
+        "<projet>-BOM.csv dans release/02_PCBA, séparateur « ; », composants DNP exclus.\n"
         "Colonnes, ordre, libellés et regroupement se règlent dans l'onglet BOM.",
-        "<project>_BOM.csv in release/02_PCBA, ';' separator, DNP parts excluded.\n"
+        "<project>-BOM.csv in release/02_PCBA, ';' separator, DNP parts excluded.\n"
         "Columns, order, labels and grouping are set in the BOM tab.",
     ),
-    "job_pnp_csv": ("Fichier de placement (pick & place) en CSV", "Pick & place file (CSV)"),
+    "job_pnp_csv": ("Fichier de pick and place (CSV)", "Pick and place file (CSV)"),
     "job_pnp_csv_tip": (
-        "<projet>_POS.csv dans release/02_PCBA : les deux faces dans un seul fichier, en mm, "
+        "<projet>-POS.csv dans release/02_PCBA : les deux faces dans un seul fichier, en mm, "
         "relatif à l'origine perçage/placement. Composants DNP exclus.",
-        "<project>_POS.csv in release/02_PCBA: both sides in one file, in mm, relative to the "
+        "<project>-POS.csv in release/02_PCBA: both sides in one file, in mm, relative to the "
         "drill/place origin. DNP parts excluded.",
     ),
-    "job_pcb_drill": ("Fichier de perçage (Excellon)", "Drill file (Excellon)"),
+    "job_pcb_drill": ("Fichiers de perçage Excellon (PTH / NPTH)", "Excellon drill files (PTH / NPTH)"),
     "job_pcb_drill_tip": (
-        "Fichier Excellon dans release/01_PCB/GRB, trous métallisés et non métallisés combinés, en mm.",
-        "Excellon file in release/01_PCB/GRB, plated and non-plated holes combined, in mm.",
+        "Deux fichiers Excellon dans release/01_PCB/GRB, en mm : <projet>-PTH.drl (trous "
+        "métallisés, vias compris) et <projet>-NPTH.drl (trous non métallisés).",
+        "Two Excellon files in release/01_PCB/GRB, in mm: <project>-PTH.drl (plated holes, "
+        "vias included) and <project>-NPTH.drl (non-plated holes).",
     ),
-    "job_zip_gerber": ("Archive ZIP pour le fabricant (Gerbers + perçage)", "ZIP archive for the fab house (Gerbers + drill)"),
+    "job_zip_gerber": ("Archive .zip (Gerbers + perçage)", ".zip archive (Gerbers + drill)"),
     "job_zip_gerber_tip": (
-        "Regroupe les Gerbers et le fichier de perçage dans <projet>_GERBER.zip "
+        "Regroupe les Gerbers et le fichier de perçage dans <projet>-GERBER.zip "
         "(release/01_PCB/GRB).\n"
-        "Nécessite le format Gerber coché dans l'onglet Couches.",
-        "Packs the Gerbers and the drill file into <project>_GERBER.zip (release/01_PCB/GRB).\n"
-        "Requires the Gerber format ticked in the Layers tab.",
+        "Nécessite le job « Une couche par fichier » et le format Gerber (onglet Couches).",
+        "Packs the Gerbers and the drill file into <project>-GERBER.zip (release/01_PCB/GRB).\n"
+        "Requires the \"One file per layer\" job and the Gerber format (Layers tab).",
     ),
-    "job_meca_step": ("Modèle 3D STEP", "3D model (STEP)"),
+    "job_meca_step": ("Modèle 3D (.step)", "3D model (.step)"),
     "job_meca_step_tip": (
-        "<projet>_STEP.step dans release/04_MECA : carte + composants (DNP inclus), "
+        "<projet>-3D.step dans release/04_MECA : carte + composants (DNP inclus), "
         "origine au centre de la carte.",
-        "<project>_STEP.step in release/04_MECA: board + components (DNP included), "
+        "<project>-3D.step in release/04_MECA: board + components (DNP included), "
         "origin at the board centre.",
     ),
     # --- Layers tab ------------------------------------------------------
-    "layers_info": (
-        "Chaque couche cochée dans « Exporter » est générée dans chacun des formats cochés "
-        "ci-dessous, un fichier par couche (dossiers release/01_PCB/GRB, PDF, SVG, DXF). "
-        "Elle apparaît aussi dans le job « PCB en un seul PDF ».\n"
-        "Survoler un format ou un en-tête de colonne pour plus de détails ; cliquer sur "
-        "l'en-tête d'une colonne à cases pour tout cocher ou tout décocher.",
-        "Each layer ticked in \"Export\" is generated in each format ticked below, one file "
-        "per layer (folders release/01_PCB/GRB, PDF, SVG, DXF). It is also part of the "
-        "\"PCB as a single PDF\" job.\n"
-        "Hover a format or a column header for details; click a checkbox column header "
-        "to tick or untick the whole column.",
-    ),
     "layer_formats": ("Formats :", "Formats:"),
     "fmt_gerber": ("Gerber", "Gerber"),
     "fmt_gerber_tip": (
         "Gerber X2, coordonnées 4.6 en mm, attributs de netlist, fichier job Gerber.\n"
-        "Edge.Cuts toujours inclus ; extensions normalisées (.GTL, .GBL, .GTS, .G1…).\n"
+        "Edge.Cuts toujours inclus ; extensions Protel (.gtl, .gbl, .gts, .g1…, contour en .gko).\n"
         "Les options par couche (fond de plan, contour, miroir…) ne s'appliquent pas.",
         "Gerber X2, 4.6 coordinates in mm, netlist attributes, Gerber job file.\n"
-        "Edge.Cuts always included; normalised extensions (.GTL, .GBL, .GTS, .G1…).\n"
-        "Per-layer options (drawing layer, outline, mirror…) do not apply.",
+        "Edge.Cuts always included; Protel extensions (.gtl, .gbl, .gts, .g1…, outline as .gko).\n"
+        "Per-layer options (drawing sheet, outline, mirror…) do not apply.",
     ),
     "fmt_pdf": ("PDF", "PDF"),
     "fmt_pdf_tip": (
@@ -146,7 +160,7 @@ STRINGS = {
         "Un SVG par couche, format de page, sans cartouche.\n"
         "Fond de plan, contour et miroir s'appliquent ; pas d'inversion ni de rotation.",
         "One SVG per layer, page size, without title block.\n"
-        "Drawing layer, outline and mirror apply; no inversion or rotation.",
+        "Drawing sheet, outline and mirror apply; no inversion or rotation.",
     ),
     "fmt_dxf": ("DXF", "DXF"),
     "fmt_dxf_tip": (
@@ -154,25 +168,25 @@ STRINGS = {
         "Fond de plan et contour s'appliquent ; kicad-cli ne gère ni miroir, ni inversion, "
         "ni rotation en DXF.",
         "One DXF per layer, in mm, graphic items plotted as contours.\n"
-        "Drawing layer and outline apply; kicad-cli supports no mirror, inversion or "
+        "Drawing sheet and outline apply; kicad-cli supports no mirror, inversion or "
         "rotation for DXF.",
     ),
     "col_export": ("Exporter", "Export"),
     "col_layer": ("Couche", "Layer"),
-    "col_background": ("Fond de plan", "Drawing layer"),
+    "col_background": ("Fond de\nplan", "Drawing\nsheet"),
     "col_edge": ("Contour", "Outline"),
     "col_mirror": ("Miroir", "Mirror"),
     "col_invert": ("Inverser\n(PDF)", "Invert\n(PDF)"),
-    "col_rotate": ("Rotation 180°\n(PDF)", "Rotate 180°\n(PDF)"),
+    "col_rotate": ("Rotation\n180° (PDF)", "Rotate\n180° (PDF)"),
     "col_export_tip": (
         "Exporter cette couche dans tous les formats cochés.",
         "Export this layer in every ticked format.",
     ),
     "col_layer_tip": ("Nom de la couche (nom utilisateur entre parenthèses).", "Layer name (user name in brackets)."),
     "col_background_tip": (
-        "Ajoute la couche Dwgs.User (cadre, cotes, notes) au fichier de la couche.\n"
+        "Ajoute le fond de plan (cadre et cartouche de la feuille KiCad) au fichier de la couche.\n"
         "PDF, SVG et DXF.",
-        "Adds the Dwgs.User layer (frame, dimensions, notes) to the layer file.\n"
+        "Adds the drawing sheet (KiCad page frame and title block) to the layer file.\n"
         "PDF, SVG and DXF.",
     ),
     "col_edge_tip": (
@@ -196,16 +210,6 @@ STRINGS = {
     ),
     # --- BOM tab ---------------------------------------------------------
     "tab_bom": ("BOM", "BOM"),
-    "bom_info": (
-        "Champs disponibles dans les symboles du projet. Chaque ligne cochée devient une colonne "
-        "du CSV, dans l'ordre du tableau (de haut en bas = de gauche à droite).\n"
-        "Le libellé est l'en-tête de colonne ; « Grouper » regroupe sur une ligne les "
-        "composants dont tous les champs groupés sont identiques.",
-        "Fields available in the project's symbols. Each ticked row becomes a CSV column, in "
-        "table order (top to bottom = left to right).\n"
-        "The label is the column header; \"Group\" merges into one line the parts whose "
-        "grouped fields are all identical.",
-    ),
     "bom_col_include": ("Inclure", "Include"),
     "bom_col_field": ("Champ", "Field"),
     "bom_col_label": ("Libellé de colonne", "Column label"),
@@ -235,11 +239,11 @@ STRINGS = {
     "opt_color": ("Couleur (couleurs des couches par défaut)", "Colour (default layer colours)"),
     "opt_bw": ("Noir et blanc", "Black & white"),
     "opt_color_mode_tip": (
-        "S'applique aux PDF et SVG générés par KiCad : schéma, PCB en un seul PDF, fichiers "
-        "par couche et plans d'assemblage.\n"
+        "S'applique aux PDF et SVG générés par KiCad : schéma, PDF avec toutes les couches, "
+        "fichiers par couche et fichier d'implantation.\n"
         "Le plan de perçage et les couches inversées restent en noir et blanc.",
-        "Applies to the PDFs and SVGs generated by KiCad: schematic, PCB as a single PDF, "
-        "per-layer files and assembly drawings.\n"
+        "Applies to the PDFs and SVGs generated by KiCad: schematic, single PDF with all "
+        "layers, per-layer files and assembly drawing.\n"
         "The drill map and inverted layers stay black & white.",
     ),
     # --- Messages --------------------------------------------------------
@@ -255,10 +259,10 @@ STRINGS = {
     "msg_profile_title": ("Kicad Release Wizard - Profil", "Kicad Release Wizard - Profile"),
     "msg_error": ("Erreur", "Error"),
     "msg_no_layer": (
-        "Aucune couche cochée dans l'onglet Couches, alors qu'un format de couche ou le job "
-        "« PCB en un seul PDF » est sélectionné.",
-        "No layer ticked in the Layers tab while a layer format or the "
-        "\"PCB as a single PDF\" job is selected.",
+        "Aucune couche cochée dans l'onglet Couches, alors que le job « Une couche par fichier » "
+        "ou « Fichier PDF avec toutes les couches » est sélectionné.",
+        "No layer ticked in the Layers tab while the \"One file per layer\" or "
+        "\"Single PDF with all layers\" job is selected.",
     ),
     "msg_no_bom_field": (
         "Aucun champ coché dans l'onglet BOM alors que la nomenclature est demandée.",

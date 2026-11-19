@@ -18,7 +18,7 @@ are launched.
 | `JOBSET_OUTPUT_WORK_PATH` is the folder where the output is being prepared; native jobs write there too, and KiCad copies or zips it afterwards. | Script jobs write there, so their files follow the same path as native ones and end up in the ZIP when relevant (e.g. normalised Gerber names). |
 | With `record_output`, the job log file stays empty. | `record_output` is off; each script writes its own `<job>.log` in the work dir. |
 | An output whose `only` list is empty runs every job. | `build_jobset()` drops outputs with no job. |
-| Each output runs its jobs again in a fresh work dir. | `pcb_gerbers` / `pcb_drill` / `gerber_ext` run twice when both the GRB folder and the ZIP are produced. |
+| Each output runs its jobs again in a fresh work dir. | `pcb_gerbers` / `pcb_drill` / `fix_names` run twice when both the GRB folder and the ZIP are produced. |
 | `kicad-cli` occasionally crashed (segfault) during a job in 10.0.1; a re-run passed. | Nothing to do in the wizard; the live log shows the failure. |
 
 ## Plot placement
@@ -28,6 +28,11 @@ are launched.
 corner. With `--mirror`, x becomes `page width − x`. The PDF inversion maps the pcbnew
 outline with exactly this rule (verified on rectangular, castellated, cut-out and mirrored
 boards).
+
+Plotting a layer that is not enabled on the board (e.g. `User.45`) with
+`--include-border-title` succeeds and gives the drawing sheet alone (used for the drill map).
+By default every plot also draws the drill holes (`--drill-shape-opt 2`); the wizard always
+passes `--drill-shape-opt 0`.
 
 `--negative` exists but fills the board's bounding box plus a margin, losing the real shape
 (notches, rounded corners, cut-outs), hence the custom inversion.
@@ -77,7 +82,7 @@ UI state, saved on *Generate* or with *Save profile*.
     { "field": "${ITEM_NUMBER}", "include": true, "label": "#", "group_by": false },
     { "field": "Value", "include": true, "label": "Value", "group_by": true }
   ],
-  "options": { "color_mode": "color" }
+  "options": { "color_mode": "color", "drill_map_outline": true, "drill_map_sheet": false }
 }
 ```
 
@@ -93,6 +98,8 @@ Settings of the job scripts, written on every *Generate*.
   "sch": "/path/to/project/my_board.kicad_sch",
   "kicad_cli": "/usr/bin/kicad-cli",
   "color_mode": "color",
+  "drill_map_outline": true,
+  "drill_map_sheet": false,
   "layers": ["F.Cu", "B.Cu", "F.Mask"],
   "layer_options": [ { "layer": "F.Mask", "add_background": true, "...": "..." } ],
   "layer_formats": ["gerber", "pdf"],

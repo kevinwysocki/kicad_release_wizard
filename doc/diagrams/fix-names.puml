@@ -1,0 +1,30 @@
+@startuml fix-names
+skinparam shadowing false
+start
+:work dir of the output
+(GRB folder, Gerber ZIP or PCBA folder);
+note right
+  Drill files are already
+  <project>-PTH.drl and
+  <project>-NPTH.drl
+end note
+if (Gerber files?) then (yes)
+  :expected extensions (lower case, as KiCad writes them)
+  F.Cu gtl, B.Cu gbl, F.Mask gts, B.Mask gbs,
+  F.SilkS gto, B.SilkS gbo, F.Paste gtp, B.Paste gbp,
+  Edge.Cuts gko (KiCad writes gm1), InN.Cu gN (power plane: gpN);
+  repeat :next layer;
+    :find the Gerber whose name after "<project>-"
+    equals the layer (canonical, aliases, user name);
+    if (found, and extension differs\nignoring case?) then (yes)
+      :rename to the expected extension;
+    endif
+  repeat while (more layers?)
+endif
+if (*-all-pos.csv (KiCad suffix)?) then (yes)
+  :remove the suffix → <project>-POS.csv;
+endif
+:update the file names listed
+in <project>-job.gbrjob;
+stop
+@enduml

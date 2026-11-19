@@ -125,6 +125,11 @@ def _repaint_white(page, region, drawings):
     # straddles the edge (e.g. castellated pad openings) is exact.
     shape = page.new_shape()
     count = 0
+    # Drawings enclosing the whole board (drawing-sheet frame and borders) are page
+    # decoration, not layer artwork: they stay as they are.
+    margin = 1.0 * PT_PER_MM
+    b = region.bbox
+    around_board = fitz.Rect(b.x0 - margin, b.y0 - margin, b.x1 + margin, b.y1 + margin)
     for d in drawings:
         black_fill = _is_black(d.get("fill"))
         black_stroke = _is_black(d.get("color"))
@@ -134,7 +139,7 @@ def _repaint_white(page, region, drawings):
         width = float(d.get("width") or 0)
         if black_stroke and width:
             r = fitz.Rect(r.x0 - width / 2, r.y0 - width / 2, r.x1 + width / 2, r.y1 + width / 2)
-        if not region.touches_rect(r):
+        if r.contains(around_board) or not region.touches_rect(r):
             continue
         _copy_path(shape, d.get("items", []))
         cap = d.get("lineCap")

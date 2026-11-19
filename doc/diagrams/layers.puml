@@ -4,34 +4,36 @@ start
 :read release_config.json;
 :read the board layer table\n(canonical name, type, user name);
 repeat :next selected layer;
-  :file base = user name of the layer,\nor canonical name ("F.Cu" → F_Cu);
-  :decor = [Dwgs.User if "drawing layer"]\n      + [Edge.Cuts if "outline"];
+  :file name = <project>-<user name of the layer,
+  or canonical name> ("F.Mask" → <project>-F_Mask);
+  :layers = layer [+ Edge.Cuts if "outline"];
+  :drawing sheet (frame, title block) if "drawing sheet";
   if (SVG ticked?) then (yes)
     :kicad-cli pcb export svg --mode-single
-    layer + decor, page size, no drawing sheet,
-    mirror, colour or black & white;
+    layers, drawing sheet or --exclude-drawing-sheet,
+    page size, mirror, colour or black & white;
   endif
   if (DXF ticked?) then (yes)
     :kicad-cli pcb export dxf --mode-single
-    layer + decor, mm, contours
+    layers, [--include-border-title], mm, contours
     (no mirror / colour in kicad-cli);
   endif
   if (PDF ticked?) then (yes)
     if (invert?) then (yes)
-      :export the layer alone
+      :export the layer [+ drawing sheet]
       (black & white, mirror);
-      :export decor alone
+      :export Edge.Cuts alone if "outline"
       (black & white, mirror);
       :pdf_tools.invert_pdf();
     else (no)
-      :export layer + decor
+      :export layers [+ drawing sheet]
       (colour mode, mirror);
     endif
     if (rotate 180°?) then (yes)
       :pdf_tools.rotate_pdf_180()
       (applied after the mirror);
     endif
-    :copy result to PDF/<base>.pdf;
+    :copy result to PDF/<project>-<layer>.pdf;
   endif
 repeat while (more layers?) is (yes)
 ->no;

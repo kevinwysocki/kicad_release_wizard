@@ -1,0 +1,28 @@
+{
+  "$schema": "https://go.kicad.org/pcm/schemas/v1",
+  "name": "Kicad Release Wizard",
+  "description": "Generates a kicad-cli jobset exporting a full release package: ERC/DRC, PDFs, per-layer Gerber/PDF/SVG/DXF, BOM, pick & place, drill, STEP.",
+  "description_full": "Kicad Release Wizard builds a .kicad_jobset from a dialog and runs kicad-cli to export a complete, reproducible release package of a board.\n\nOutputs:\n- ERC and DRC reports (with schematic parity)\n- Schematic PDF, PCB multipage PDF, assembly drawings (top / mirrored bottom)\n- Per-layer export in Gerber (X2, 4.6 mm, normalised Protel extensions, ZIP for the fab house), PDF, SVG and DXF\n- Per-layer PDF options: drawing sheet (frame and title block), board outline, mirror, 180 degree rotation, black/white inversion inside the exact board outline (cut-outs included), colour or black & white\n- Drill map PDF, Excellon drill file\n- BOM CSV with the project's symbol fields: choose, order, label and group the columns\n- Pick & place CSV, STEP model\n\nSettings are saved per project. User interface in English and French (follows the locale). Works on Windows, macOS and Linux.\n\nRequirements: a system Python 3 interpreter with PyMuPDF (python3 -m pip install PyMuPDF) for the drill map and the PDF inversion / rotation; the other jobs only need the standard library.\n\nThis version is an action plugin using KiCad's SWIG Python bindings (pcbnew), supported by KiCad 9 and 10. The SWIG bindings are deprecated and planned for removal in KiCad 11: the plugin will move to the IPC API for KiCad 11.",
+  "identifier": "com.github.kevinwysocki.kicad-release-wizard",
+  "type": "plugin",
+  "author": {
+    "name": "Kevin WYSOCKI",
+    "contact": {
+      "github": "https://github.com/kevinwysocki"
+    }
+  },
+  "license": "MIT",
+  "resources": {
+    "homepage": "https://github.com/kevinwysocki/kicad_release_wizard",
+    "issues": "https://github.com/kevinwysocki/kicad_release_wizard/issues"
+  },
+  "tags": ["fabrication", "release", "jobset", "gerber", "bom"],
+  "versions": [
+    {
+      "status": "testing",
+      "kicad_version": "9.0",
+      "kicad_version_max": "10.99",
+      "runtime": "swig"
+    }
+  ]
+}

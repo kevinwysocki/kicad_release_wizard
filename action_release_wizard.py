@@ -5,6 +5,27 @@ import wx
 
 from .release_wizard_dialog import ReleaseWizardDialog
 
+# Name KiCad gives to the PCB editor frame (PCB_EDIT_FRAME_NAME in KiCad's sources).
+PCB_EDITOR_FRAME_NAME = "PcbFrame"
+
+
+def pcb_editor_frame():
+    """The PCB editor window, parent of the wizard.
+
+    wx.GetTopLevelWindows()[0] is usually KiCad's project manager: a modal dialog
+    parented to it brings the project manager to the front.
+    """
+    frame = wx.FindWindowByName(PCB_EDITOR_FRAME_NAME)
+    if frame:
+        return frame
+    active = wx.GetActiveWindow()  # the plugin is started from the PCB editor
+    if active:
+        return wx.GetTopLevelParent(active)
+    for window in wx.GetTopLevelWindows():
+        if window.IsShown() and window.GetName() == PCB_EDITOR_FRAME_NAME:
+            return window
+    return None
+
 
 class KicadReleaseWizardPlugin(pcbnew.ActionPlugin):
     def defaults(self):
@@ -16,7 +37,7 @@ class KicadReleaseWizardPlugin(pcbnew.ActionPlugin):
 
     def Run(self):
         try:
-            parent = wx.GetTopLevelWindows()[0]
+            parent = pcb_editor_frame()
         except Exception:
             parent = None
 

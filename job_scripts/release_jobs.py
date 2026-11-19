@@ -51,6 +51,8 @@ class Config:
         self.sch = Path(data["sch"]) if data.get("sch") else None
         self.cli = data["kicad_cli"]
         self.color_mode = data.get("color_mode", "color")
+        self.drill_map_outline = bool(data.get("drill_map_outline", True))
+        self.drill_map_sheet = bool(data.get("drill_map_sheet", False))
         self.layers = list(data.get("layers", []))
         self.layer_options = {o["layer"]: o for o in data.get("layer_options", [])}
         self.formats = list(data.get("layer_formats", []))
@@ -97,9 +99,24 @@ def board_layers(pcb):
     ]
 
 
+# KiCad plots drill holes on every layer by default: never in the wizard's plots.
+NO_DRILL = ["--drill-shape-opt", "0"]
+
+
+def unused_user_layer(pcb):
+    """A User.N layer absent from the board: plotting it with --include-border-title gives
+    the drawing sheet alone (KiCad accepts layers that are not enabled on the board)."""
+    used = {c for c, _k, _d in board_layers(pcb)}
+    for n in range(45, 0, -1):
+        if f"User.{n}" not in used:
+            return f"User.{n}"
+    return "Rescue"
+
+
 def safe_name(name):
-    name = re.sub(r'[\\/:*?"<>|]', "_", name).replace(".", "_")
-    return re.sub(r"\s+", "_", name)
+    """Layer name as KiCad writes it in Gerber file names: '.' and characters not allowed
+    in file names become '_', spaces are kept ("F.Silkscreen" -> "F_Silkscreen")."""
+    return re.sub(r'[\\/:*?"<>|]', "_", name).replace(".", "_")
 
 
 def layer_file_base(layer, layers):
@@ -120,7 +137,7 @@ def mkdir(path):
 def job_sch_pdf(cfg):
     if cfg.sch is None or not cfg.sch.is_file():
         raise RuntimeError("No .kicad_sch found")
-    out = out_dir(cfg, "03_DOCS") / f"{cfg.project}_SCH.pdf"
+    out = out_dir(cfg, "03_DOCS") / f"{cfg.project}-SCH.pdf"
     run_cli(cfg, ["sch", "export", "pdf", *cfg.bw_args, "--output", out, cfg.sch], out)
 
 
@@ -134,10 +151,10 @@ def job_pcb_pdf(cfg):
             pages.append(layer)
     if not pages:
         raise RuntimeError("No layer to plot")
-    out = out_dir(cfg, "03_DOCS") / f"{cfg.project}_PCB.pdf"
+    out = out_dir(cfg, "03_DOCS") / f"{cfg.project}-PCB.pdf"
     run_cli(
         cfg,
-        ["pcb", "export", "pdf", "--mode-multipage", "--include-border-title", *cfg.bw_args,
+        ["pcb", "export", "pdf", "--mode-multipage", "--include-border-title", *NO_DRILL, *cfg.bw_args,
          "--layers", ",".join(pages), "--output", out, cfg.pcb],
         out,
     )
@@ -145,25 +162,50 @@ def job_pcb_pdf(cfg):
 
 def job_implantation(cfg):
     folder = out_dir(cfg, "02_PCBA")
-    top = folder / f"{cfg.project}_IMPLANT_TOP.pdf"
-    bot = folder / f"{cfg.project}_IMPLANT_BOT.pdf"
-    run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", *cfg.bw_args,
-                  "--layers", "F.Fab,Dwgs.User,Edge.Cuts", "--output", top, cfg.pcb], top)
-    run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", *cfg.bw_args, "--mirror",
-                  "--layers", "B.Fab,Dwgs.User,Edge.Cuts", "--output", bot, cfg.pcb], bot)
+    top = folder / f"{cfg.project}-IMPLANT_TOP.pdf"
+    bot = folder / f"{cfg.project}-IMPLANT_BOT.pdf"
+    run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", "--include-border-title", *NO_DRILL, *cfg.bw_args,
+                  "--layers", "F.Fab,Edge.Cuts", "--output", top, cfg.pcb], top)
+    run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", "--include-border-title", *NO_DRILL, *cfg.bw_args,
+                  "--mirror", "--layers", "B.Fab,Edge.Cuts", "--output", bot, cfg.pcb], bot)
 
 
 def job_drill_map(cfg):
-    out = mkdir(out_dir(cfg, "01_PCB") / "PDF") / f"{cfg.project}_DRILL_MAP.pdf"
-    log("Drill map: vector drill marks at absolute coordinates + 4 mm F.Cu camera fiducials")
-    res = subprocess.run(
-        [sys.executable, str(HERE / "drill_map_pdf.py"), "--pcb", str(cfg.pcb), "--output", str(out)],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
-    )
-    for line in (res.stdout or "").splitlines():
-        log("  " + line)
-    if res.returncode != 0 or not out.is_file():
-        raise RuntimeError("Drill map generation failed")
+    """Drill map: one symbol per drill size + drill table, from KiCad's own Excellon files."""
+    import drill_map_pdf
+
+    out = mkdir(out_dir(cfg, "01_PCB") / "PDF") / f"{cfg.project}-DRILL_MAP.pdf"
+    tmp = Path(tempfile.mkdtemp(prefix="krw_drill_"))
+    try:
+        # Same drill files as the fab ones, in the format the map parser reads.
+        run_cli(cfg, ["pcb", "export", "drill", "--output", str(tmp) + os.sep, "--format", "excellon",
+                      "--drill-origin", "absolute", "--excellon-units", "mm",
+                      "--excellon-zeros-format", "decimal", "--excellon-oval-format", "alternate",
+                      "--excellon-separate-th", cfg.pcb])
+        drill_files = sorted(tmp.glob("*.drl"))
+        if not drill_files:
+            raise RuntimeError("kicad-cli produced no drill file")
+        # Background, in board coordinates: board outline and / or drawing sheet. Without
+        # either, only the page size of this plot is used.
+        base = tmp / "background.pdf"
+        if cfg.drill_map_outline or not cfg.drill_map_sheet:
+            layer = "Edge.Cuts"
+        else:
+            layer = unused_user_layer(cfg.pcb)  # drawing sheet alone
+        sheet_args = ["--include-border-title"] if cfg.drill_map_sheet else []
+        run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", "--black-and-white", *sheet_args,
+                      *NO_DRILL, "--layers", layer, "--output", base, cfg.pcb], base)
+        log(f"Board outline={'yes' if cfg.drill_map_outline else 'no'} "
+            f"drawing sheet={'yes' if cfg.drill_map_sheet else 'no'}")
+        drill_map_pdf.draw_drill_map(
+            base, drill_files, out,
+            background=cfg.drill_map_outline or cfg.drill_map_sheet,
+            table_origin_mm=(20.0, 20.0) if cfg.drill_map_sheet else (10.0, 10.0),
+            log=log,
+        )
+        log(f"[OK] {out}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ----------------------------------------------------------------- PCB layers
@@ -182,35 +224,36 @@ def job_layers(cfg):
             log(f"WARN layer not in board, skipped: {layer}")
             continue
         opts = cfg.layer_options.get(layer, {})
-        base = layer_file_base(layer, layers_info)
-        decor = []
-        if opts.get("add_background", True):
-            decor.append("Dwgs.User")
-        if opts.get("add_edge_cuts", False):
-            decor.append("Edge.Cuts")
-        layer_arg = ",".join([layer] + decor)
+        name = f"{cfg.project}-{layer_file_base(layer, layers_info)}"
+        # "Drawing sheet" = KiCad page frame and title block (not a board layer).
+        sheet = bool(opts.get("add_background", True))
+        edge = bool(opts.get("add_edge_cuts", False))
+        layer_arg = layer + (",Edge.Cuts" if edge else "")
         mirror = ["--mirror"] if opts.get("mirror", False) else []
-        log(f"Layer {layer} -> {base} (layers={layer_arg}, mirror={bool(mirror)}, "
+        log(f"Layer {layer} -> {name} (layers={layer_arg}, drawing sheet={sheet}, mirror={bool(mirror)}, "
             f"invert={opts.get('invert_colors', False)}, rotate={opts.get('rotate_180', False)})")
 
         if "svg" in dirs:
-            out = dirs["svg"] / f"{base}.svg"
-            run_cli(cfg, ["pcb", "export", "svg", "--mode-single", "--exclude-drawing-sheet",
+            out = dirs["svg"] / f"{name}.svg"
+            sheet_args = [] if sheet else ["--exclude-drawing-sheet"]
+            run_cli(cfg, ["pcb", "export", "svg", "--mode-single", *sheet_args, *NO_DRILL,
                           "--page-size-mode", "0", *cfg.bw_args, *mirror,
                           "--layers", layer_arg, "--output", out, cfg.pcb], out)
         if "dxf" in dirs:
             # kicad-cli has no mirror / colour option for DXF.
-            out = dirs["dxf"] / f"{base}.dxf"
-            run_cli(cfg, ["pcb", "export", "dxf", "--mode-single", "--output-units", "mm",
+            out = dirs["dxf"] / f"{name}.dxf"
+            sheet_args = ["--include-border-title"] if sheet else []
+            run_cli(cfg, ["pcb", "export", "dxf", "--mode-single", *sheet_args, *NO_DRILL, "--output-units", "mm",
                           "--use-contours", "--layers", layer_arg, "--output", out, cfg.pcb], out)
         if "pdf" in dirs:
-            export_layer_pdf(cfg, layer, layer_arg, decor, mirror, opts, dirs["pdf"] / f"{base}.pdf")
+            export_layer_pdf(cfg, layer, sheet, edge, mirror, opts, dirs["pdf"] / f"{name}.pdf")
 
 
-def export_layer_pdf(cfg, layer, layer_arg, decor, mirror, opts, final_pdf):
+def export_layer_pdf(cfg, layer, sheet, edge, mirror, opts, final_pdf):
     # Intermediate files live outside the output folder (it is copied as is by KiCad).
     tmp = Path(tempfile.mkdtemp(prefix="krw_"))
     stem = final_pdf.stem
+    sheet_args = ["--include-border-title"] if sheet else []
     try:
         if opts.get("invert_colors", False):
             import pdf_tools
@@ -219,22 +262,24 @@ def export_layer_pdf(cfg, layer, layer_arg, decor, mirror, opts, final_pdf):
                 raise RuntimeError(
                     f"{cfg.outline_json} not found - run Generate from the Kicad Release Wizard plugin"
                 )
-            # The layer alone is inverted (always black & white); Dwgs.User / Edge.Cuts
-            # are exported separately and drawn on top unchanged.
+            # The layer (+ drawing sheet) is inverted, always black & white; the frame is
+            # left alone by the inversion. Edge.Cuts is exported separately, drawn on top.
             raw = tmp / f"{stem}_RAW_LAYER.pdf"
-            run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", "--black-and-white", *mirror,
-                          "--layers", layer, "--output", raw, cfg.pcb], raw)
+            run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", *sheet_args, *NO_DRILL, "--black-and-white",
+                          *mirror, "--layers", layer, "--output", raw, cfg.pcb], raw)
             overlay = None
-            if decor:
-                overlay = tmp / f"{stem}_RAW_DECOR.pdf"
+            if edge:
+                overlay = tmp / f"{stem}_RAW_EDGE.pdf"
                 run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", "--black-and-white", *mirror,
-                              "--layers", ",".join(decor), "--output", overlay, cfg.pcb], overlay)
+                              "--drill-shape-opt", "0", "--layers", "Edge.Cuts", "--output", overlay,
+                              cfg.pcb], overlay)
             current = tmp / f"{stem}_INVERTED.pdf"
             pdf_tools.invert_pdf(raw, cfg.outline_json, current, bool(mirror), overlay, log=log)
         else:
             current = tmp / f"{stem}.pdf"
-            run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", *cfg.bw_args, *mirror,
-                          "--layers", layer_arg, "--output", current, cfg.pcb], current)
+            run_cli(cfg, ["pcb", "export", "pdf", "--mode-single", *sheet_args, *NO_DRILL, *cfg.bw_args, *mirror,
+                          "--layers", layer + (",Edge.Cuts" if edge else ""), "--output", current,
+                          cfg.pcb], current)
 
         if opts.get("rotate_180", False):
             import pdf_tools
@@ -255,7 +300,7 @@ def export_layer_pdf(cfg, layer, layer_arg, decor, mirror, opts, final_pdf):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-# --------------------------------------------------------------- Gerber names
+# ------------------------------------------------------------------ file names
 
 GERBER_EXT_RE = re.compile(r"^\.(gbr|gtl|gbl|gts|gbs|gto|gbo|gtp|gbp|gko|gm1|g\d+|gp\d+)$", re.IGNORECASE)
 
@@ -265,15 +310,16 @@ def _norm(s):
 
 
 def _expected_extensions(layers_info):
+    """Protel extensions, lower case like the ones KiCad writes."""
     ext = {
-        "F.Cu": "GTL", "B.Cu": "GBL", "F.Mask": "GTS", "B.Mask": "GBS",
-        "F.SilkS": "GTO", "B.SilkS": "GBO", "F.Paste": "GTP", "B.Paste": "GBP",
-        "Edge.Cuts": "GKO",
+        "F.Cu": "gtl", "B.Cu": "gbl", "F.Mask": "gts", "B.Mask": "gbs",
+        "F.SilkS": "gto", "B.SilkS": "gbo", "F.Paste": "gtp", "B.Paste": "gbp",
+        "Edge.Cuts": "gko",  # board outline: Protel / Altium keep-out (KiCad writes .gm1)
     }
     for canonical, kind, _display in layers_info:
         m = re.match(r"^In(\d+)\.Cu$", canonical)
         if m:
-            ext[canonical] = ("GP" if kind.lower() == "power" else "G") + m.group(1)
+            ext[canonical] = ("gp" if kind.lower() == "power" else "g") + m.group(1)
     return ext
 
 
@@ -295,16 +341,32 @@ def _aliases(layer):
     return [layer] + aliases
 
 
-def job_gerber_ext(cfg):
-    """Normalise Gerber file extensions (.GTL, .GBL, .G1...) and copy the outline to .GM1."""
-    grb = out_dir(cfg, "01_PCB/GRB")
+POS_SUFFIX_RE = re.compile(r"^(?P<base>.+)-(all|top|bottom)-pos(?P<ext>\.\w+)$", re.IGNORECASE)
+
+
+def _rename(path, new_name, renames):
+    target = path.with_name(new_name)
+    if path.name == target.name:
+        return path
+    if path.name.lower() != target.name.lower() and target.exists():
+        target.unlink()
+    path.rename(target)
+    renames[path.name] = target.name
+    log(f"Renamed {path.name} -> {target.name}")
+    return target
+
+
+def _normalise_gerbers(cfg, folder, renames):
+    """Protel extensions (.gtl, .gbl, .g1..., outline .gko)."""
     layers_info = board_layers(cfg.pcb)
     # Layer user names (e.g. "top_layer") also appear in KiCad's Gerber file names.
     display = {c: d for c, _k, d in layers_info if d}
 
     def gerbers():
-        return [f for f in grb.iterdir() if f.is_file() and GERBER_EXT_RE.match(f.suffix)]
+        return [f for f in folder.iterdir() if f.is_file() and GERBER_EXT_RE.match(f.suffix)]
 
+    if not gerbers():
+        return
     for layer, ext in sorted(_expected_extensions(layers_info).items()):
         tokens = {_norm(a) for a in _aliases(layer) + ([display[layer]] if layer in display else [])}
         found = None
@@ -316,22 +378,44 @@ def job_gerber_ext(cfg):
             if _norm(name) in tokens:
                 found = f
                 break
-        if found is None:
-            continue
-        target = found.with_suffix("." + ext)
         # Only the case differs (KiCad's own .gbl vs .GBL): already right, and on
-        # case-insensitive file systems target.exists() would be the file itself.
-        if found.suffix.lower() == target.suffix.lower():
-            log(f"OK {found.name}")
-            continue
-        if target.exists():
-            target.unlink()
-        found.rename(target)
-        log(f"Renamed {found.name} -> {target.name}")
+        # case-insensitive file systems the target would be the file itself.
+        if found is not None and found.suffix.lower() != "." + ext:
+            _rename(found, found.stem + "." + ext, renames)
 
-    for gko in [f for f in grb.iterdir() if f.suffix.lower() == ".gko"]:
-        shutil.copyfile(gko, gko.with_suffix(".GM1"))
-        log(f"Copied {gko.name} -> {gko.with_suffix('.GM1').name}")
+
+def _update_gerber_job_file(folder, renames):
+    """Keep the file names listed in <project>-job.gbrjob in sync with the renames."""
+    if not renames:
+        return
+    for job_file in folder.glob("*.gbrjob"):
+        data = json.loads(job_file.read_text(encoding="utf-8"))
+        changed = 0
+        for item in data.get("FilesAttributes", []):
+            if item.get("Path") in renames:
+                item["Path"] = renames[item["Path"]]
+                changed += 1
+        if changed:
+            job_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            log(f"Updated {changed} file name(s) in {job_file.name}")
+
+
+def job_fix_names(cfg):
+    """Give KiCad's native outputs the <project>-<FUNCTION> names of the other files.
+
+    Runs last in the outputs holding Gerbers or position files (work dir):
+    - Gerber extensions normalised (outline .gm1 -> .gko), .gbrjob kept in sync;
+    - <name>-all-pos.csv (suffix forced by KiCad) -> <name>.csv.
+    Drill files already follow the rule: <project>-PTH.drl, <project>-NPTH.drl.
+    """
+    folder = out_dir(cfg, "01_PCB/GRB")
+    renames = {}
+    _normalise_gerbers(cfg, folder, renames)
+    for f in list(folder.iterdir()):
+        m = POS_SUFFIX_RE.match(f.name)
+        if m and f.is_file():
+            _rename(f, m.group("base") + m.group("ext"), renames)
+    _update_gerber_job_file(folder, renames)
 
 
 JOBS = {
@@ -340,7 +424,7 @@ JOBS = {
     "implantation": job_implantation,
     "drill_map": job_drill_map,
     "layers": job_layers,
-    "gerber_ext": job_gerber_ext,
+    "fix_names": job_fix_names,
 }
 
 
@@ -356,8 +440,8 @@ def main():
         pass
     try:
         cfg = Config(HERE / "release_config.json")
-        # No log file for gerber_ext: its folder is also zipped for the fab house.
-        if os.environ.get("JOBSET_OUTPUT_WORK_PATH") and job != "gerber_ext":
+        # No log file for fix_names: its folder is also zipped for the fab house.
+        if os.environ.get("JOBSET_OUTPUT_WORK_PATH") and job != "fix_names":
             # KiCad 10 leaves record_output logs empty: write our own next to the outputs.
             _LOG_FILE = open(out_dir(cfg, ".") / f"{job}.log", "w", encoding="utf-8")
         log(f"START {job} ({cfg.project})")

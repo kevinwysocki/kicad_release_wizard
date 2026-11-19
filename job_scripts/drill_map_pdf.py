@@ -1,482 +1,274 @@
+"""Drill map PDF: one symbol per drill diameter and a drill table (top left).
+
+Inputs are produced by kicad-cli, so the map matches the fabrication files exactly:
+- the Excellon drill files (PTH and NPTH, mm, decimal, absolute origin, G85 slots),
+- a background PDF plotted by kicad-cli with the board's page settings: it provides the
+  page size and, optionally, the board outline and / or the drawing sheet, in the same
+  coordinates as the board (1 mm = 72/25.4 pt).
+
+    python drill_map_pdf.py --base edge.pdf --drill board-PTH.drl board-NPTH.drl --output map.pdf
+"""
+
 import argparse
 import math
+import re
 import sys
 from pathlib import Path
 
-try:
-    import fitz  # PyMuPDF
-except Exception as e:
-    print(f"[ERROR] Cannot import fitz / PyMuPDF: {e}", file=sys.stderr, flush=True)
-    sys.exit(2)
+import fitz  # PyMuPDF
 
-PAPER_SIZES_MM = {
-    'A0': (1189.0, 841.0), 'A1': (841.0, 594.0), 'A2': (594.0, 420.0),
-    'A3': (420.0, 297.0), 'A4': (297.0, 210.0), 'A5': (210.0, 148.0),
-    'A': (279.4, 215.9), 'B': (431.8, 279.4), 'C': (558.8, 431.8),
-    'D': (863.6, 558.8), 'E': (1117.6, 863.6),
-    'USLetter': (279.4, 215.9), 'USLegal': (355.6, 215.9), 'USLedger': (431.8, 279.4),
-}
+PT_PER_MM = 72.0 / 25.4
+BLACK = (0, 0, 0)
 
-def tokenize(text):
-    i = 0
-    n = len(text)
-    while i < n:
-        c = text[i]
-        if c.isspace():
-            i += 1
+# ------------------------------------------------------------------- Excellon
+
+_TOOL_DEF_RE = re.compile(r"^T(\d+)C([\d.]+)")
+_TOOL_SEL_RE = re.compile(r"^T(\d+)$")
+_HIT_RE = re.compile(r"^X(-?[\d.]+)Y(-?[\d.]+)(?:G85X(-?[\d.]+)Y(-?[\d.]+))?$")
+_FUNCTION_RE = re.compile(r"TA\.AperFunction,([^,]+),([^,]+),(\w+)")
+
+
+def parse_excellon(path):
+    """Tools of a KiCad Excellon file (mm, decimal, absolute): list of dicts with
+    diameter, plated, function, hits [(x, y)] and slots [((x1, y1), (x2, y2))].
+    Y is negated back to board coordinates (Excellon Y points up)."""
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    plated = "NonPlated" not in text and not Path(path).stem.upper().endswith("NPTH")
+    tools = {}
+    current = None
+    pending_function = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        m = _FUNCTION_RE.search(line)
+        if m:
+            pending_function = m.group(3)
             continue
-        if c in '()':
-            yield c
-            i += 1
+        m = _TOOL_DEF_RE.match(line)
+        if m:
+            tools[m.group(1)] = {
+                "diameter": float(m.group(2)),
+                "plated": plated,
+                "function": pending_function,
+                "hits": [],
+                "slots": [],
+            }
+            pending_function = ""
             continue
-        if c == '"':
-            i += 1
-            buf = []
-            while i < n:
-                if text[i] == '\\' and i + 1 < n:
-                    buf.append(text[i + 1])
-                    i += 2
+        m = _TOOL_SEL_RE.match(line)
+        if m:
+            current = tools.get(m.group(1))
+            continue
+        m = _HIT_RE.match(line)
+        if m and current is not None:
+            x1, y1 = float(m.group(1)), -float(m.group(2))
+            if m.group(3) is not None:
+                current["slots"].append(((x1, y1), (float(m.group(3)), -float(m.group(4)))))
+            else:
+                current["hits"].append((x1, y1))
+    return [t for t in tools.values() if t["hits"] or t["slots"]]
+
+
+def drill_groups(drill_files):
+    """One group per (plated, diameter, hole/slot), sorted: plated first, then by diameter."""
+    groups = {}
+    for path in drill_files:
+        for tool in parse_excellon(path):
+            for kind, items in (("hole", tool["hits"]), ("slot", tool["slots"])):
+                if not items:
                     continue
-                if text[i] == '"':
-                    i += 1
-                    break
-                buf.append(text[i])
-                i += 1
-            yield ''.join(buf)
-            continue
-        j = i
-        while j < n and not text[j].isspace() and text[j] not in '()':
-            j += 1
-        yield text[i:j]
-        i = j
+                key = (not tool["plated"], round(tool["diameter"], 4), kind)
+                g = groups.setdefault(key, {
+                    "diameter": tool["diameter"], "plated": tool["plated"], "kind": kind,
+                    "functions": set(), "items": [],
+                })
+                g["items"].extend(items)
+                if tool["function"]:
+                    g["functions"].add(tool["function"])
+    return [groups[k] for k in sorted(groups)]
 
-def parse_sexpr(tokens):
-    stack = [[]]
-    for tok in tokens:
-        if tok == '(':
-            new = []
-            stack[-1].append(new)
-            stack.append(new)
-        elif tok == ')':
-            if len(stack) > 1:
-                stack.pop()
-        else:
-            stack[-1].append(tok)
-    return stack[0]
 
-def as_float(v, default=0.0):
-    try:
-        return float(v)
-    except Exception:
-        return default
+def group_label(g):
+    label = "PTH" if g["plated"] else "NPTH"
+    if g["kind"] == "slot":
+        label += " slot"
+    elif g["functions"] == {"ViaDrill"}:
+        label += " via"
+    return label
 
-def children(node, name=None):
-    if not isinstance(node, list):
-        return []
-    out = []
-    for c in node:
-        if isinstance(c, list) and c:
-            if name is None or c[0] == name:
-                out.append(c)
-    return out
 
-def first_child(node, name):
-    cs = children(node, name)
-    return cs[0] if cs else None
+# -------------------------------------------------------------------- symbols
 
-def walk(node):
-    if isinstance(node, list):
-        yield node
-        for x in node:
-            yield from walk(x)
+OUTLINES = [None, "circle", "square", "triangle", "diamond", "hexagon", "triangle_down"]
+# Simple symbols first: +, x, circle, square, triangle, ... then combinations.
+SYMBOLS = [(None, "plus"), (None, "cross")] + [(o, None) for o in OUTLINES[1:]] + [
+    (o, m) for m in ("plus", "cross") for o in OUTLINES[1:]
+]
 
-def get_board_node(root):
-    if isinstance(root, list):
-        for node in root:
-            if isinstance(node, list) and node and node[0] == 'kicad_pcb':
-                return node
-    return root
 
-def get_paper_size_mm(root):
-    board = get_board_node(root)
-    paper = first_child(board, 'paper')
-    if not paper or len(paper) < 2:
-        return None
-    if len(paper) >= 4:
-        w = as_float(paper[2], None)
-        h = as_float(paper[3], None)
-        if w and h and w > 0 and h > 0:
-            name = str(paper[1]).strip().strip('"') or 'custom'
-            return (float(w), float(h), name)
-    if len(paper) >= 3:
-        w = as_float(paper[1], None)
-        h = as_float(paper[2], None)
-        if w and h and w > 0 and h > 0:
-            return (float(w), float(h), 'custom')
-    name = str(paper[1]).strip().strip('"')
-    key = name.replace(' ', '')
-    size = PAPER_SIZES_MM.get(key) or PAPER_SIZES_MM.get(key.upper())
-    if not size:
-        return None
-    w, h = size
-    tail = ' '.join(str(x).lower() for x in paper[2:])
-    if 'portrait' in tail and w > h:
-        w, h = h, w
-    elif 'landscape' in tail and h > w:
-        w, h = h, w
-    return (w, h, key)
+def _polygon(cx, cy, r, sides, start_deg):
+    return [
+        fitz.Point(cx + r * math.cos(math.radians(start_deg + i * 360 / sides)),
+                   cy + r * math.sin(math.radians(start_deg + i * 360 / sides)))
+        for i in range(sides)
+    ]
 
-def transform_point(fx, fy, fr_deg, px, py):
-    a = math.radians(fr_deg)
-    ca = math.cos(a)
-    sa = math.sin(a)
-    return (fx + ca * px - sa * py, fy + sa * px + ca * py)
 
-def get_layer(node):
-    lay = first_child(node, 'layer')
-    if lay and len(lay) >= 2:
-        return str(lay[1])
-    return ''
+def draw_symbol(page, center, size_pt, index, width_pt):
+    """Draw symbol number <index> centred on <center>, fitting a size_pt square."""
+    outline, mark = SYMBOLS[index % len(SYMBOLS)]
+    cx, cy = center.x, center.y
+    r = size_pt / 2
+    shape = page.new_shape()
+    if outline == "circle":
+        shape.draw_circle(center, r)
+    elif outline == "square":
+        shape.draw_rect(fitz.Rect(cx - r, cy - r, cx + r, cy + r))
+    elif outline == "triangle":
+        shape.draw_polyline(_polygon(cx, cy, r, 3, -90) + [_polygon(cx, cy, r, 3, -90)[0]])
+    elif outline == "triangle_down":
+        shape.draw_polyline(_polygon(cx, cy, r, 3, 90) + [_polygon(cx, cy, r, 3, 90)[0]])
+    elif outline == "diamond":
+        shape.draw_polyline(_polygon(cx, cy, r, 4, -90) + [_polygon(cx, cy, r, 4, -90)[0]])
+    elif outline == "hexagon":
+        shape.draw_polyline(_polygon(cx, cy, r, 6, 0) + [_polygon(cx, cy, r, 6, 0)[0]])
+    inner = r if outline is None else r * 0.7
+    if mark == "plus":
+        shape.draw_line(fitz.Point(cx - inner, cy), fitz.Point(cx + inner, cy))
+        shape.draw_line(fitz.Point(cx, cy - inner), fitz.Point(cx, cy + inner))
+    elif mark == "cross":
+        d = inner * 0.7071
+        shape.draw_line(fitz.Point(cx - d, cy - d), fitz.Point(cx + d, cy + d))
+        shape.draw_line(fitz.Point(cx - d, cy + d), fitz.Point(cx + d, cy - d))
+    shape.finish(color=BLACK, fill=None, width=width_pt, closePath=False)
+    shape.commit()
 
-def get_point(node, name):
-    p = first_child(node, name)
-    if p and len(p) >= 3:
-        return (as_float(p[1]), as_float(p[2]))
-    return None
 
-def get_stroke_width(node, default=0.05):
-    st = first_child(node, 'stroke')
-    if st:
-        w = first_child(st, 'width')
-        if w and len(w) >= 2:
-            return max(0.0001, as_float(w[1], default))
-    w = first_child(node, 'width')
-    if w and len(w) >= 2:
-        return max(0.0001, as_float(w[1], default))
-    return default
+def symbol_size_mm(diameter):
+    """Symbol size on the board: the hole diameter, kept readable (0.6 to 2.5 mm)."""
+    return min(2.5, max(0.6, diameter))
 
-def is_solid_fill(node):
-    f = first_child(node, 'fill')
-    if not f:
-        return False
-    vals = [str(x).lower() for x in f if not isinstance(x, list)]
-    if 'solid' in vals or 'yes' in vals:
-        return True
-    t = first_child(f, 'type')
-    if t and len(t) >= 2 and str(t[1]).lower() in ('solid', 'yes'):
-        return True
-    return False
 
-def node_has_layer(node, target='F.Cu'):
-    layers = first_child(node, 'layers')
-    if layers:
-        for item in layers[1:]:
-            if isinstance(item, str) and item.strip().strip('"') == target:
-                return True
-    lay = first_child(node, 'layer')
-    if lay and len(lay) >= 2 and str(lay[1]).strip().strip('"') == target:
-        return True
-    return False
+# ---------------------------------------------------------------------- table
 
-def get_size_xy(node):
-    sz = first_child(node, 'size')
-    if sz and len(sz) >= 3:
-        return (as_float(sz[1]), as_float(sz[2]))
-    return None
+def draw_table(page, groups, origin_mm=(10.0, 10.0)):
+    """Drill table at the top left of the page; returns its rectangle (pt)."""
+    cols = [("Symbol", 14), ("Ø (mm)", 18), ("Count", 14), ("Type", 22)]  # widths in mm
+    row_h = 5.0 * PT_PER_MM
+    x0, y0 = origin_mm[0] * PT_PER_MM, origin_mm[1] * PT_PER_MM
+    widths = [w * PT_PER_MM for _, w in cols]
+    total_w = sum(widths)
+    font = 7.5
+    line = 0.25
 
-def drill_from_pad(pad):
-    d = first_child(pad, 'drill')
-    if not d or len(d) < 2:
-        return None
-    if len(d) >= 4 and str(d[1]).lower() == 'oval':
-        return (as_float(d[2]), as_float(d[3]))
-    return (as_float(d[1]), as_float(d[1]))
-
-def collect_drills(root):
-    drills = []
-    for node in walk(root):
-        if not node:
-            continue
-        if node[0] == 'via':
-            at = first_child(node, 'at')
-            dr = first_child(node, 'drill')
-            if at and len(at) >= 3 and dr and len(dr) >= 2:
-                drills.append((as_float(at[1]), as_float(at[2]), as_float(dr[1]), as_float(dr[1])))
-        elif node[0] == 'footprint':
-            fat = first_child(node, 'at')
-            fx = as_float(fat[1]) if fat and len(fat) >= 3 else 0.0
-            fy = as_float(fat[2]) if fat and len(fat) >= 3 else 0.0
-            fr = as_float(fat[3]) if fat and len(fat) >= 4 else 0.0
-            for pad in children(node, 'pad'):
-                d = drill_from_pad(pad)
-                if not d:
-                    continue
-                pat = first_child(pad, 'at')
-                px = as_float(pat[1]) if pat and len(pat) >= 3 else 0.0
-                py = as_float(pat[2]) if pat and len(pat) >= 3 else 0.0
-                x, y = transform_point(fx, fy, fr, px, py)
-                drills.append((x, y, d[0], d[1]))
-    return drills
-
-def arc_points_from_3pts(p1, p2, p3, n=32):
-    x1, y1 = p1; x2, y2 = p2; x3, y3 = p3
-    d = 2 * (x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2))
-    if abs(d) < 1e-9:
-        return [p1, p2, p3]
-    ux = ((x1*x1+y1*y1)*(y2-y3) + (x2*x2+y2*y2)*(y3-y1) + (x3*x3+y3*y3)*(y1-y2)) / d
-    uy = ((x1*x1+y1*y1)*(x3-x2) + (x2*x2+y2*y2)*(x1-x3) + (x3*x3+y3*y3)*(x2-x1)) / d
-    r = math.hypot(x1-ux, y1-uy)
-    a1 = math.atan2(y1-uy, x1-ux)
-    a2 = math.atan2(y2-uy, x2-ux)
-    a3 = math.atan2(y3-uy, x3-ux)
-    def norm(a):
-        while a < 0: a += 2*math.pi
-        while a >= 2*math.pi: a -= 2*math.pi
-        return a
-    na1, na2, na3 = norm(a1), norm(a2), norm(a3)
-    ccw_span = (na3 - na1) % (2*math.pi)
-    mid_on_ccw = ((na2 - na1) % (2*math.pi)) <= ccw_span
-    total = ccw_span if mid_on_ccw else ccw_span - 2*math.pi
-    steps = max(4, n)
-    return [(ux + r * math.cos(a1 + total * i / steps), uy + r * math.sin(a1 + total * i / steps)) for i in range(steps + 1)]
-
-def collect_fcu_graphics(root):
-    """Collect only 4.0 mm round F.Cu camera fiducials.
-
-    The drill-map overlay must not bring arbitrary F.Cu graphics. We keep:
-      - solid filled board-level gr_circle on F.Cu, diameter 4.0 mm,
-      - solid filled footprint-level fp_circle on F.Cu, diameter 4.0 mm,
-      - circular pads present on F.Cu, size 4.0 x 4.0 mm.
-
-    This covers the common KiCad cases where camera fiducials / mires are made
-    as SMD circular pads rather than graphic circles.
-    """
-    board = get_board_node(root)
-    out = []
-    target_diam_mm = 4.0
-    tol_mm = 0.08
-    candidates = 0
-    kept = 0
-    kept_graphic = 0
-    kept_pad = 0
-
-    def near_4mm(dia):
-        return dia is not None and abs(float(dia) - target_diam_mm) <= tol_mm
-
-    def circle_diameter(center, end):
-        return 2.0 * math.hypot(end[0] - center[0], end[1] - center[1])
-
-    def add_circle_if_camera_mark(center, end, width=0.001, fill=True, source='circle'):
-        nonlocal candidates, kept, kept_graphic
-        candidates += 1
-        dia = circle_diameter(center, end)
-        if not near_4mm(dia):
-            return
-        if not fill:
-            return
-        out.append({
-            'kind': 'circle',
-            'center': center,
-            'end': end,
-            'width': max(0.0001, width),
-            'fill': True,
-            'diameter_mm': dia,
-            'source': source,
-        })
-        kept += 1
-        kept_graphic += 1
-
-    def add_pad_if_camera_mark(center, diameter, source='pad'):
-        nonlocal candidates, kept, kept_pad
-        candidates += 1
-        if not near_4mm(diameter):
-            return
-        r = float(diameter) / 2.0
-        out.append({
-            'kind': 'circle',
-            'center': center,
-            'end': (center[0] + r, center[1]),
-            'width': 0.001,
-            'fill': True,
-            'diameter_mm': float(diameter),
-            'source': source,
-        })
-        kept += 1
-        kept_pad += 1
-
-    # Board-level graphic filled circles.
-    for node in children(board):
-        if not node or not isinstance(node[0], str):
-            continue
-        if node[0] != 'gr_circle' or get_layer(node) != 'F.Cu':
-            continue
-        c = get_point(node, 'center')
-        e = get_point(node, 'end')
-        if not (c and e):
-            continue
-        add_circle_if_camera_mark(c, e, width=get_stroke_width(node, 0.001), fill=is_solid_fill(node), source='gr_circle')
-
-    for fp in children(board, 'footprint'):
-        fat = first_child(fp, 'at')
-        fx = as_float(fat[1]) if fat and len(fat) >= 3 else 0.0
-        fy = as_float(fat[2]) if fat and len(fat) >= 3 else 0.0
-        fr = as_float(fat[3]) if fat and len(fat) >= 4 else 0.0
-        def tr(p): return transform_point(fx, fy, fr, p[0], p[1])
-
-        # Footprint graphic filled circles.
-        for node in children(fp, 'fp_circle'):
-            if get_layer(node) != 'F.Cu':
-                continue
-            c = get_point(node, 'center')
-            e = get_point(node, 'end')
-            if not (c and e):
-                continue
-            add_circle_if_camera_mark(tr(c), tr(e), width=get_stroke_width(node, 0.001), fill=is_solid_fill(node), source='fp_circle')
-
-        # Circular F.Cu pads, common for fiducials / mires camera.
-        for pad in children(fp, 'pad'):
-            if not node_has_layer(pad, 'F.Cu'):
-                continue
-            shape = str(pad[2]).lower() if len(pad) >= 3 else ''
-            size = get_size_xy(pad)
-            if not size:
-                continue
-            sx, sy = size
-            if sx <= 0 or sy <= 0:
-                continue
-            # KiCad uses shape "circle" for true round pads; accept oval only
-            # when X and Y are effectively identical.
-            if shape not in ('circle', 'oval'):
-                continue
-            if abs(sx - sy) > tol_mm:
-                continue
-            pat = first_child(pad, 'at')
-            px = as_float(pat[1]) if pat and len(pat) >= 3 else 0.0
-            py = as_float(pat[2]) if pat and len(pat) >= 3 else 0.0
-            x, y = tr((px, py))
-            add_pad_if_camera_mark((x, y), (sx + sy) / 2.0, source='pad')
-
-    print(f'[INFO] F.Cu round fiducial candidates={candidates}', flush=True)
-    print(f'[INFO] F.Cu 4.0mm fiducials kept={kept} (graphics={kept_graphic}, pads={kept_pad}, tolerance +/- {tol_mm:.3f} mm)', flush=True)
-    return out
-
-def write_pdf(drills, graphics, output, paper_size=None):
-    if not drills:
-        raise RuntimeError('No drilled pads / vias found')
-
-    scale = 72.0 / 25.4
-
-    if paper_size:
-        paper_w_mm, paper_h_mm, paper_name = paper_size
-        minx = 0.0
-        miny = 0.0
-        page_w = paper_w_mm * scale
-        page_h = paper_h_mm * scale
-        print(f'[INFO] Paper={paper_name} {paper_w_mm:.3f}x{paper_h_mm:.3f} mm', flush=True)
-        print('[INFO] Coordinate mode=absolute KiCad sheet coordinates, no bbox crop, no XY offset', flush=True)
-    else:
-        xs = [d[0] for d in drills]
-        ys = [d[1] for d in drills]
-        margin = 10.0
-        minx, maxx = min(xs) - margin, max(xs) + margin
-        miny, maxy = min(ys) - margin, max(ys) + margin
-        page_w = (maxx - minx) * scale
-        page_h = (maxy - miny) * scale
-        print('[WARN] No KiCad paper definition found: using drill bbox fallback, positions may be offset', flush=True)
-
-    doc = fitz.open()
-    page = doc.new_page(width=page_w, height=page_h)
-
-    def pt(x, y):
-        return fitz.Point((x - minx) * scale, (y - miny) * scale)
-
-    def draw_one(g):
-        kind = g.get('kind')
-
-        if kind == 'circle' and g.get('center') and g.get('end'):
-            c = g['center']
-            e = g['end']
-
-            r_mm = math.hypot(e[0] - c[0], e[1] - c[1])
-            r_pt = r_mm * scale
-            cp = pt(*c)
-
-            width_mm = max(0.0001, float(g.get('width') or 0.001))
-            width_pt = width_mm * scale
-
-            page.draw_circle(
-                cp,
-                r_pt,
-                color=(0, 0, 0),
-                fill=(0, 0, 0) if g.get('fill') else None,
-                width=width_pt,
-            )
-            return True
-
-        return False
-
-    graphics_drawn = 0
-    for g in graphics:
-        try:
-            if draw_one(g):
-                graphics_drawn += 1
-        except Exception as e:
-            print(f'[WARN] F.Cu graphic skipped: {e}', flush=True)
-
-    valid = 0
-    marker_length_mm = 0.1
-    marker_width_mm = 0.01
-    half_len_pt = (marker_length_mm / 2.0) * scale
-    marker_width_pt = marker_width_mm * scale
-
-    for x, y, dx, dy in drills:
-        if dx <= 0 or dy <= 0:
-            continue
-
-        c = pt(x, y)
-
-        # Marque de perçage demandée :
-        # - position = centre du perçage
-        # - trait vertical
-        # - longueur = 0.1 mm
-        # - épaisseur = 0.01 mm
-        page.draw_line(
-            fitz.Point(c.x, c.y - half_len_pt),
-            fitz.Point(c.x, c.y + half_len_pt),
-            color=(0, 0, 0),
-            width=marker_width_pt,
+    def cell_text(col, row, text, bold=False):
+        x = x0 + sum(widths[:col])
+        y = y0 + (row + 1) * row_h  # row 0 is the title
+        width = fitz.get_text_length(text, fontname="hebo" if bold else "helv", fontsize=font)
+        page.insert_text(
+            fitz.Point(x + (widths[col] - width) / 2, y + row_h / 2 + font * 0.35),
+            text, fontsize=font, fontname="hebo" if bold else "helv", color=BLACK,
         )
 
-        valid += 1
+    title = "Drill table"
+    page.insert_text(fitz.Point(x0, y0 + row_h * 0.7), title, fontsize=font + 1.5, fontname="hebo", color=BLACK)
 
-    print(f'[INFO] F.Cu 4.0mm camera fiducials drawn={graphics_drawn}', flush=True)
-    print(f'[INFO] Drill vertical marks drawn={valid}', flush=True)
-    print(f'[INFO] Drill marker geometry: vertical line, length={marker_length_mm:.3f} mm, stroke={marker_width_mm:.3f} mm', flush=True)
-    print('[INFO] Drill positions are read from pad/via drill centers; circles are not drawn for drill holes', flush=True)
+    for c, (name, _w) in enumerate(cols):
+        cell_text(c, 0, name, bold=True)
+    total = 0
+    for i, g in enumerate(groups):
+        row = i + 1
+        count = len(g["items"])
+        total += count
+        cy = y0 + (row + 1) * row_h + row_h / 2
+        draw_symbol(page, fitz.Point(x0 + widths[0] / 2, cy), 3.0 * PT_PER_MM, i, line)
+        cell_text(1, row, f"{g['diameter']:.3f}")
+        cell_text(2, row, str(count))
+        cell_text(3, row, group_label(g))
+    last = len(groups) + 1
+    cell_text(0, last, "Total", bold=True)
+    cell_text(2, last, str(total), bold=True)
 
+    rows = len(groups) + 2  # header + groups + total
+    top = y0 + row_h
+    shape = page.new_shape()
+    for r in range(rows + 1):
+        y = top + r * row_h
+        shape.draw_line(fitz.Point(x0, y), fitz.Point(x0 + total_w, y))
+    x = x0
+    for w in [0] + widths:
+        x += w
+        shape.draw_line(fitz.Point(x, top), fitz.Point(x, top + rows * row_h))
+    shape.finish(color=BLACK, width=line)
+    shape.commit()
+    return fitz.Rect(x0, y0, x0 + total_w, top + rows * row_h)
+
+
+# ------------------------------------------------------------------------ map
+
+def draw_drill_map(base_pdf, drill_files, output, background=True, table_origin_mm=(10.0, 10.0), log=print):
+    groups = drill_groups(drill_files)
+    if not groups:
+        raise RuntimeError("No drill hits found in the Excellon files")
+    if len(groups) > len(SYMBOLS):
+        log(f"WARN {len(groups)} drill sizes for {len(SYMBOLS)} symbols: symbols are reused")
+
+    doc = fitz.open(str(base_pdf))
+    if not background:
+        # Same page size (board coordinates stay valid), without the background drawing.
+        rect = doc[0].rect
+        doc.close()
+        doc = fitz.open()
+        doc.new_page(width=rect.width, height=rect.height)
+    page = doc[0]
+    holes_rect = fitz.Rect()
+    for i, g in enumerate(groups):
+        size_pt = symbol_size_mm(g["diameter"]) * PT_PER_MM
+        width_pt = max(0.05, symbol_size_mm(g["diameter"]) * 0.08) * PT_PER_MM
+        for item in g["items"]:
+            if g["kind"] == "slot":
+                (x1, y1), (x2, y2) = item
+                p1, p2 = fitz.Point(x1 * PT_PER_MM, y1 * PT_PER_MM), fitz.Point(x2 * PT_PER_MM, y2 * PT_PER_MM)
+                # Slot outline: a line as wide as the slot, drawn as a thin stadium.
+                shape = page.new_shape()
+                shape.draw_line(p1, p2)
+                shape.finish(color=(0.6, 0.6, 0.6), width=g["diameter"] * PT_PER_MM, lineCap=1)
+                shape.commit()
+                center = fitz.Point((p1.x + p2.x) / 2, (p1.y + p2.y) / 2)
+            else:
+                center = fitz.Point(item[0] * PT_PER_MM, item[1] * PT_PER_MM)
+            draw_symbol(page, center, size_pt, i, width_pt)
+            r = size_pt / 2
+            box = fitz.Rect(center.x - r, center.y - r, center.x + r, center.y + r)
+            holes_rect = box if holes_rect.is_empty else holes_rect | box
+
+    table = draw_table(page, groups, table_origin_mm)
+    if table.intersects(holes_rect):
+        log("WARN the drill table overlaps the board: move the board on its page in KiCad")
+
+    for i, g in enumerate(groups):
+        outline, mark = SYMBOLS[i % len(SYMBOLS)]
+        log(f"{group_label(g):9s} Ø{g['diameter']:.3f} mm x{len(g['items']):<5d} symbol={outline or ''}{'+' if mark == 'plus' else 'x' if mark == 'cross' else ''}")
+    log(f"Drill sizes={len(groups)} holes={sum(len(g['items']) for g in groups)}")
+
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output), garbage=3, deflate=True)
     doc.close()
 
-def main():
-    ap = argparse.ArgumentParser(description='Generate vector drill-map PDF: drill circles + F.Cu 4mm camera fiducials from circles or pads, exact drill diameters, sheet size.')
-    ap.add_argument('--pcb', required=True); ap.add_argument('--output', required=True)
-    args = ap.parse_args(); pcb = Path(args.pcb); output = Path(args.output)
-    if not pcb.exists(): raise FileNotFoundError(pcb)
-    text = pcb.read_text(encoding='utf-8', errors='ignore')
-    root = parse_sexpr(tokenize(text))
-    drills = collect_drills(root); graphics = collect_fcu_graphics(root); paper_size = get_paper_size_mm(root)
-    print(f'[INFO] Drill positions={len(drills)}', flush=True)
-    print(f'[INFO] F.Cu 4.0mm camera fiducials collected={len(graphics)}', flush=True)
-    print('[INFO] F.Cu overlay filter: only 4.0 mm round fiducials are added: solid filled gr_circle/fp_circle and circular F.Cu pads; all other F.Cu objects are ignored.', flush=True)
-    write_pdf(drills, graphics, output, paper_size=paper_size)
-    print(f'[OK] Written {output}', flush=True)
-    return 0
 
-if __name__ == '__main__':
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--base", required=True, help="background PDF plotted by kicad-cli (page size, outline, sheet)")
+    ap.add_argument("--drill", required=True, nargs="+", help="Excellon files (mm, decimal, absolute)")
+    ap.add_argument("--output", required=True)
+    ap.add_argument("--no-background", action="store_true", help="blank page of the base PDF's size")
+    args = ap.parse_args()
+    draw_drill_map(args.base, args.drill, args.output, background=not args.no_background)
+
+
+if __name__ == "__main__":
     try:
-        raise SystemExit(main())
-    except SystemExit:
-        raise
+        main()
     except Exception as e:
-        print(f'[ERROR] {e}', file=sys.stderr, flush=True)
+        print(f"[ERROR] {e}", file=sys.stderr, flush=True)
         sys.exit(1)

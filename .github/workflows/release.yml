@@ -1,0 +1,46 @@
+name: Release
+
+# On a version tag (e.g. 0.0.2): build the KiCad PCM package and publish a GitHub release
+# with the package, the metadata.json to submit to the KiCad metadata repository and the icon.
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing version tag to (re)build, e.g. 0.0.2"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the PCM package
+        run: python pcm/build_package.py "$TAG" --out dist
+
+      - name: Publish the GitHub release
+        run: |
+          status=$(python -c "import json; print(json.load(open('pcm/metadata.json'))['versions'][0]['status'])")
+          prerelease=""
+          if [ "$status" != "stable" ]; then prerelease="--prerelease"; fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.zip dist/metadata.json dist/icon.png --clobber
+          else
+            gh release create "$TAG" dist/*.zip dist/metadata.json dist/icon.png \
+              --title "$TAG" --generate-notes $prerelease
+          fi

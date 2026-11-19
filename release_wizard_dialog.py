@@ -22,19 +22,32 @@ JOB_SCRIPTS_DIR = PLUGIN_DIR / "job_scripts"
 
 PROFILE_VERSION = 1
 
+
 # (job id, enabled by default). Labels and tooltips come from i18n: job_<id>, job_<id>_tip.
 DEFAULT_JOBS = [
     ("erc", True),
     ("drc", True),
     ("sch_pdf", True),
+    ("pcb_layers", True),
     ("pcb_pdf", True),
     ("pcb_implantation", True),
     ("drill_map_pdf", True),
+    ("pcb_drill", True),
     ("bom_csv", True),
     ("pnp_csv", True),
-    ("pcb_drill", True),
     ("zip_gerber", True),
     ("meca_step", True),
+]
+
+# Jobs tab layout: (group title i18n key, job ids), one box per group.
+JOB_GROUPS = [
+    ("grp_rules", ["erc", "drc"]),
+    ("grp_schematic", ["sch_pdf"]),
+    ("grp_routing", ["pcb_layers", "pcb_pdf", "pcb_implantation"]),
+    ("grp_drilling", ["drill_map_pdf", "pcb_drill"]),
+    ("grp_bom", ["bom_csv"]),
+    ("grp_fab", ["pnp_csv", "zip_gerber"]),
+    ("grp_meca", ["meca_step"]),
 ]
 
 # Per-layer export formats (Layers tab) and their default state.
@@ -137,8 +150,6 @@ class ReleaseWizardDialog(wx.Dialog):
         self.layer_rows = [entry["canonical"] for entry in self.layer_entries]
 
         root = wx.BoxSizer(wx.VERTICAL)
-        self.header = wx.StaticText(self, label=self._header_text())
-        root.Add(self.header, 0, wx.ALL | wx.EXPAND, 8)
 
         nb = wx.Notebook(self)
         root.Add(nb, 1, wx.ALL | wx.EXPAND, 8)
@@ -149,6 +160,7 @@ class ReleaseWizardDialog(wx.Dialog):
         nb.AddPage(self._build_options_page(nb), tr("tab_options"))
 
         self._load_profile_into_ui()
+        self._refresh_job_options()
         self._autosize_layers_grid()
         self._autosize_bom_grid()
 
@@ -167,51 +179,73 @@ class ReleaseWizardDialog(wx.Dialog):
         buttons.Add(close, 0, wx.ALL, 5)
         root.Add(buttons, 0, wx.EXPAND)
         self.SetSizer(root)
-        self.SetMinSize((760, 520))
-        try:
-            work = wx.Display(0).GetClientArea()
-            self.SetSize(
-                (
-                    min(1120, max(760, work.width - 80)),
-                    min(760, max(520, work.height - 80)),
-                )
-            )
-        except Exception:
-            pass
+        self._fit_to_jobs_tab(nb)
         self.CentreOnParent()
         wx.CallAfter(self._autosize_layers_grid)
 
     # ------------------------------------------------------------------ UI
 
-    def _header_text(self):
-        return tr(
-            "header",
-            project=self.project_name,
-            folder=self.project_dir,
-            profile=self.profile_path,
-        )
+    def _fit_to_jobs_tab(self, nb):
+        """Default size: the smallest window showing the whole Jobs tab and every column of
+        the layers and BOM grids (the grids scroll vertically)."""
+        page_w, page_h = nb.GetPage(0).GetBestSize()
+        scrollbar = wx.SystemSettings.GetMetric(wx.SYS_VSCROLL_X)
+
+        def grid_width(grid):
+            cols = sum(grid.GetColSize(c) for c in range(grid.GetNumberCols()))
+            return grid.GetRowLabelSize() + cols + scrollbar + 2 * 3 + 4
+
+        page_w = max(page_w, grid_width(self.layers_grid))
+        # BOM tab: grid + its button column.
+        page_w = max(page_w, grid_width(self.bom_grid) + self.bom_buttons.GetMinSize().width + 2 * 3)
+        # Page + notebook margins (2 x 8 px) + notebook borders and tab row + window frame.
+        width = page_w + 2 * 8 + 12 + 24
+        height = self.GetBestSize().height - nb.GetBestSize().height + page_h + 2 * 8 + 40
+        try:
+            work = wx.Display(wx.Display.GetFromWindow(self) if self.GetParent() else 0).GetClientArea()
+            width, height = min(width, work.width - 40), min(height, work.height - 40)
+        except Exception:
+            pass
+        self.SetMinSize((min(width, 480), min(height, 420)))
+        self.SetSize((width, height))
 
     def _build_jobs_page(self, nb):
         panel = wx.Panel(nb)
         sizer = wx.BoxSizer(wx.VERTICAL)
-        info = wx.StaticText(panel, label=tr("jobs_info"))
-        sizer.Add(info, 0, wx.ALL, 5)
+        defaults = dict(DEFAULT_JOBS)
         self.job_checks = {}
-        for job_id, default in DEFAULT_JOBS:
-            cb = wx.CheckBox(panel, label=tr("job_" + job_id))
-            cb.SetValue(default)
-            cb.SetToolTip(tr("job_" + job_id + "_tip"))
-            self.job_checks[job_id] = cb
-            sizer.Add(cb, 0, wx.ALL, 4)
+        for title_key, job_ids in JOB_GROUPS:
+            box = wx.StaticBoxSizer(wx.VERTICAL, panel, tr(title_key))
+            parent = box.GetStaticBox()
+            for job_id in job_ids:
+                cb = wx.CheckBox(parent, label=tr("job_" + job_id))
+                cb.SetValue(defaults[job_id])
+                cb.SetToolTip(tr("job_" + job_id + "_tip"))
+                self.job_checks[job_id] = cb
+                box.Add(cb, 0, wx.ALL, 3)
+                if job_id == "drill_map_pdf":
+                    self.drill_map_outline = wx.CheckBox(parent, label=tr("opt_drill_map_outline"))
+                    self.drill_map_outline.SetValue(True)
+                    self.drill_map_outline.SetToolTip(tr("opt_drill_map_outline_tip"))
+                    box.Add(self.drill_map_outline, 0, wx.LEFT | wx.RIGHT, 24)
+                    self.drill_map_sheet = wx.CheckBox(parent, label=tr("opt_drill_map_sheet"))
+                    self.drill_map_sheet.SetValue(False)
+                    self.drill_map_sheet.SetToolTip(tr("opt_drill_map_sheet_tip"))
+                    box.Add(self.drill_map_sheet, 0, wx.LEFT | wx.RIGHT, 24)
+                    cb.Bind(wx.EVT_CHECKBOX, lambda _e: self._refresh_job_options())
+            sizer.Add(box, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
         panel.SetSizer(sizer)
         return panel
+
+    def _refresh_job_options(self):
+        """Sub-options are only enabled when their job is ticked."""
+        enabled = self.job_checks["drill_map_pdf"].GetValue()
+        self.drill_map_outline.Enable(enabled)
+        self.drill_map_sheet.Enable(enabled)
 
     def _build_layers_page(self, nb):
         panel = wx.Panel(nb)
         sizer = wx.BoxSizer(wx.VERTICAL)
-        info = wx.StaticText(panel, label=tr("layers_info"))
-        info.Wrap(900)
-        sizer.Add(info, 0, wx.ALL, 5)
 
         formats = wx.BoxSizer(wx.HORIZONTAL)
         formats.Add(
@@ -235,7 +269,7 @@ class ReleaseWizardDialog(wx.Dialog):
         for col, key in GRID_COLUMNS:
             grid.SetColLabelValue(col, tr(key))
         grid.SetColLabelSize(int(grid.GetCharHeight() * 2.6))
-        grid.SetRowLabelSize(42)
+        grid.SetRowLabelSize(0)
         grid.EnableEditing(True)
         for col in BOOL_COLUMNS:
             grid.SetColFormatBool(col)
@@ -279,8 +313,8 @@ class ReleaseWizardDialog(wx.Dialog):
             grid = self.layers_grid
             grid.AutoSizeColumns(setAsMin=False)
             for col in BOOL_COLUMNS:
-                if grid.GetColSize(col) < 70:
-                    grid.SetColSize(col, 70)
+                if grid.GetColSize(col) < 56:
+                    grid.SetColSize(col, 56)
             grid.ForceRefresh()
         except Exception:
             pass
@@ -337,9 +371,6 @@ class ReleaseWizardDialog(wx.Dialog):
     def _build_bom_page(self, nb):
         panel = wx.Panel(nb)
         sizer = wx.BoxSizer(wx.VERTICAL)
-        info = wx.StaticText(panel, label=tr("bom_info"))
-        info.Wrap(900)
-        sizer.Add(info, 0, wx.ALL, 5)
 
         body = wx.BoxSizer(wx.HORIZONTAL)
         grid = wxgrid.Grid(panel)
@@ -363,6 +394,7 @@ class ReleaseWizardDialog(wx.Dialog):
             btn.Bind(wx.EVT_BUTTON, handler)
             buttons.Add(btn, 0, wx.ALL | wx.EXPAND, 3)
         body.Add(buttons, 0, wx.ALL, 3)
+        self.bom_buttons = buttons
         sizer.Add(body, 1, wx.EXPAND)
 
         panel.SetSizer(sizer)
@@ -422,8 +454,8 @@ class ReleaseWizardDialog(wx.Dialog):
             for col in BOM_BOOL_COLUMNS:
                 if grid.GetColSize(col) < 70:
                     grid.SetColSize(col, 70)
-            if grid.GetColSize(BOM_LABEL) < 220:
-                grid.SetColSize(BOM_LABEL, 220)
+            if grid.GetColSize(BOM_LABEL) < 120:  # editable: keep room to type
+                grid.SetColSize(BOM_LABEL, 120)
             grid.ForceRefresh()
         except Exception:
             pass
@@ -492,9 +524,9 @@ class ReleaseWizardDialog(wx.Dialog):
                     m.group(1),
                 ):
                     canonical = lm.group(2)
-                    # Dwgs.User / Edge.Cuts are added through the per-layer options and
+                    # Edge.Cuts is added through the per-layer "outline" option and
                     # Edge.Cuts is always part of the Gerbers.
-                    if canonical in seen or canonical in ("Dwgs.User", "Edge.Cuts"):
+                    if canonical in seen or canonical == "Edge.Cuts":
                         continue
                     seen.add(canonical)
                     entries.append(
@@ -584,7 +616,11 @@ class ReleaseWizardDialog(wx.Dialog):
                 for row, layer in enumerate(self.layer_rows)
             ],
             "bom_fields": self._bom_rows(),
-            "options": {"color_mode": self._color_mode()},
+            "options": {
+                "color_mode": self._color_mode(),
+                "drill_map_outline": bool(self.drill_map_outline.GetValue()),
+                "drill_map_sheet": bool(self.drill_map_sheet.GetValue()),
+            },
         }
 
     def _save_profile(self, path=None):
@@ -594,7 +630,6 @@ class ReleaseWizardDialog(wx.Dialog):
             encoding="utf-8",
         )
         self.profile_path = target
-        self.header.SetLabel(self._header_text())
         return target
 
     def _load_profile_file(self, path: Path):
@@ -609,7 +644,6 @@ class ReleaseWizardDialog(wx.Dialog):
             return False
 
         self.profile_path = Path(path)
-        self.header.SetLabel(self._header_text())
 
         jobs = data.get("jobs", {})
         if isinstance(jobs, dict):
@@ -644,6 +678,11 @@ class ReleaseWizardDialog(wx.Dialog):
         opts = data.get("options", {})
         if isinstance(opts, dict) and opts.get("color_mode") in COLOR_MODES:
             self.color_mode.SetSelection(COLOR_MODES.index(opts["color_mode"]))
+        if isinstance(opts, dict) and "drill_map_outline" in opts:
+            self.drill_map_outline.SetValue(bool(opts["drill_map_outline"]))
+        if isinstance(opts, dict) and "drill_map_sheet" in opts:
+            self.drill_map_sheet.SetValue(bool(opts["drill_map_sheet"]))
+        self._refresh_job_options()
         return True
 
     def _load_profile_into_ui(self):
@@ -663,6 +702,8 @@ class ReleaseWizardDialog(wx.Dialog):
         jobs = self._selected_jobs()
         formats = self._selected_formats()
         selected_layers = self._selected_layers()
+        if not jobs.get("pcb_layers"):
+            formats = []  # no per-layer file at all (Gerbers included)
         if not selected_layers and (formats or jobs.get("pcb_pdf")):
             raise RuntimeError(tr("msg_no_layer"))
         bom_fields = [row for row in self._bom_rows() if row["include"]]
@@ -723,6 +764,8 @@ class ReleaseWizardDialog(wx.Dialog):
                     "sch": str(self._sch_file() or ""),
                     "kicad_cli": cli,
                     "color_mode": self._color_mode(),
+                    "drill_map_outline": bool(self.drill_map_outline.GetValue()),
+                    "drill_map_sheet": bool(self.drill_map_sheet.GetValue()),
                     "layers": selected_layers,
                     "layer_options": selected_layer_options,
                     "layer_formats": formats,
@@ -935,7 +978,7 @@ def build_jobset(cfg, python):
                     "description": "",
                     "fail_on_error": True,
                     "format": "report",
-                    "output_filename": "${PROJECTNAME}_ERC.txt",
+                    "output_filename": "${PROJECTNAME}-ERC.txt",
                     "severity": 48,
                     "units": "mm",
                 },
@@ -951,7 +994,7 @@ def build_jobset(cfg, python):
                     "description": "",
                     "fail_on_error": True,
                     "format": "report",
-                    "output_filename": "${PROJECTNAME}_DRC.txt",
+                    "output_filename": "${PROJECTNAME}-DRC.txt",
                     "parity": True,
                     "refill_zones": False,
                     "report_all_track_errors": True,
@@ -983,17 +1026,22 @@ def build_jobset(cfg, python):
         jobs.append(drill_job())
     if "gerber" in formats:
         jobs.append(gerber_job(layers))
-        jobs.append(script_job("GERBER EXTENSIONS", "pcb_gerber_extensions", "gerber_ext"))
     if jobs_enabled.get("meca_step", True):
         jobs.append(step_job())
+    # Last: renames KiCad's native outputs (Gerber extensions, "-all-pos" suffix of the
+    # position file) in each output's work dir.
+    if {"pcb_gerbers", "pnp_csv"} & {j["id"] for j in jobs}:
+        jobs.append(script_job("FILE NAMES", "fix_names", "fix_names"))
 
     present = {j["id"] for j in jobs}
     outputs = []
 
-    def add_output(oid, ids, path, archive=False):
+    def add_output(oid, ids, path, archive=False, fix_names=False):
         only = [x for x in ids if x in present]
         if not only:  # an empty "only" list would run every job
             return
+        if fix_names and "fix_names" in present:
+            only.append("fix_names")
         out = {"description": oid, "id": oid, "only": only, "type": "folder",
                "settings": {"output_path": path}}
         if archive:
@@ -1001,16 +1049,18 @@ def build_jobset(cfg, python):
             out["settings"]["format"] = "zip"
         outputs.append(out)
 
-    grb = ["pcb_gerbers", "pcb_gerber_extensions", "pcb_drill"]
-    add_output("01_PCB_GRB", grb, "${KIPRJMOD}/release/01_PCB/GRB")
+    grb = ["pcb_gerbers", "pcb_drill"]
+    add_output("01_PCB_GRB", grb, "${KIPRJMOD}/release/01_PCB/GRB", fix_names=True)
     add_output("01_PCB_LAYERS", ["pcb_layers", "drill_map_pdf"], "${KIPRJMOD}/release/01_PCB")
-    add_output("02_PCBA", ["pcb_implantation", "bom_csv", "pnp_csv"], "${KIPRJMOD}/release/02_PCBA")
+    add_output("02_PCBA", ["pcb_implantation", "bom_csv", "pnp_csv"], "${KIPRJMOD}/release/02_PCBA",
+               fix_names=True)
     add_output("03_DOCS", ["erc", "drc", "sch_pdf", "pcb_pdf"], "${KIPRJMOD}/release/03_DOCS")
     add_output("04_MECA", ["meca_step"], "${KIPRJMOD}/release/04_MECA")
     if jobs_enabled.get("zip_gerber", True) and "gerber" in formats:
         add_output(
             "GERBER", grb,
-            "${KIPRJMOD}/release/01_PCB/GRB/${PROJECTNAME}_GERBER.zip", archive=True,
+            "${KIPRJMOD}/release/01_PCB/GRB/${PROJECTNAME}-GERBER.zip", archive=True,
+            fix_names=True,
         )
     return {"jobs": jobs, "meta": {"version": 1}, "outputs": outputs}
 
@@ -1035,7 +1085,7 @@ def bom_job(fields):
             "group_symbols": any(f.get("group_by") for f in fields),
             "keep_line_breaks": False,
             "keep_tabs": False,
-            "output_filename": "${PROJECTNAME}_BOM.csv",
+            "output_filename": "${PROJECTNAME}-BOM.csv",
             "ref_delimiter": ",",
             "ref_range_delimiter": "-",
             "sort_asc": True,
@@ -1059,7 +1109,7 @@ def pnp_job():
             "format": "csv",
             "gerber_board_edge": True,
             "negate_bottom_x": False,
-            "output_filename": "${PROJECTNAME}_POS.csv",
+            "output_filename": "${PROJECTNAME}-POS.csv",
             "side": "both",
             "single_file": True,
             "smd_only": False,
@@ -1078,7 +1128,7 @@ def drill_job():
         "settings": {
             "description": "",
             "drill_origin": "abs",
-            "excellon.combine_pth_npth": True,
+            "excellon.combine_pth_npth": False,  # <project>-PTH.drl + <project>-NPTH.drl
             "excellon.minimal_header": False,
             "excellon.mirror_y": False,
             "excellon.oval_drill_route": False,
@@ -1106,7 +1156,7 @@ def gerber_job(selected_layers):
     layers.append("Edge.Cuts")
 
     # use_protel_file_extension=True lets KiCad emit the usual extensions for
-    # standard layers. The post-processing job pcb_gerber_extensions then
+    # standard layers. The post-processing job fix_names then
     # enforces / normalizes the requested extension list, including inner layers.
     return {
         "description": "PCB GERBER",
@@ -1167,7 +1217,7 @@ def step_job():
             "include_unspecified": True,
             "occt_format": 0,
             "optimize_step": True,
-            "output_filename": "${PROJECTNAME}_STEP.step",
+            "output_filename": "${PROJECTNAME}-3D.step",
             "overwrite": True,
             "subst_models": True,
             "use_defined_origin": False,

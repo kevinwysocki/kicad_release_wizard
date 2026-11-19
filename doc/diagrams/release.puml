@@ -1,0 +1,27 @@
+@startuml release
+skinparam shadowing false
+actor Maintainer as M
+participant "GitHub\nrepository" as GH
+participant "Release workflow\n(GitHub Actions)" as A
+participant "GitHub release" as R
+participant "gitlab.com/kicad/\naddons/metadata" as KM
+participant "KiCad PCM\n(users)" as PCM
+
+M -> GH : git push main + tag 0.0.2
+GH -> A : tag pushed
+activate A
+A -> A : pcm/build_package.py 0.0.2
+note right of A
+  dist/<identifier>-0.0.2.zip
+  dist/metadata.json (+ download_url,
+  sha256, sizes)
+  dist/icon.png
+end note
+A -> R : create release 0.0.2\n(pre-release while "testing")
+deactivate A
+M -> R : download metadata.json, icon.png
+M -> KM : merge request\npackages/<identifier>/metadata.json, icon.png
+KM -> KM : review by the KiCad team
+KM -> PCM : package listed\n(repository regenerated)
+PCM -> R : download the zip\n(download_url, sha256 checked)
+@enduml

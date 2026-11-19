@@ -1,4 +1,5 @@
-"""Generate the plugin logo (resources/logo.png and resources/logo_256.png).
+"""Generate the plugin logo (resources/logo.png 24x24 toolbar icon, resources/icon_64.png
+for the KiCad Plugin and Content Manager, resources/logo_256.png for the README).
 
 Usage: python resources/make_logo.py   (requires Pillow)
 """
@@ -84,9 +85,11 @@ def draw():
 def main():
     master = draw()
     master.resize((256, 256), Image.LANCZOS).save(HERE / "logo_256.png")
+    # KiCad Plugin and Content Manager icon: 64x64
+    master.resize((64, 64), Image.LANCZOS).save(HERE / "icon_64.png")
     # KiCad toolbar icons are 24x24
     master.resize((24, 24), Image.LANCZOS).save(HERE / "logo.png")
-    print("written:", HERE / "logo.png", HERE / "logo_256.png")
+    print("written:", HERE / "logo.png", HERE / "icon_64.png", HERE / "logo_256.png")
 
 
 if __name__ == "__main__":

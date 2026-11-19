@@ -5,6 +5,7 @@
 | [architecture.md](architecture.md) | Components, source tree, *Generate* sequence, jobset structure, dialog states |
 | [pipelines.md](pipelines.md) | Per-layer export, PDF inversion, Gerber extensions, other script jobs, BOM fields discovery |
 | [kicad-integration.md](kicad-integration.md) | KiCad behaviours the design relies on (`special_execute`, work dir, plot placement, API quirks), interpreter discovery, data file formats |
+| [release.md](release.md) | Packaging, GitHub release workflow and submission to the KiCad Plugin and Content Manager |
 
 ## Diagrams
 

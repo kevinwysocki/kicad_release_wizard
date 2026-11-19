@@ -23,7 +23,7 @@ endif
 black drawing touching the board;
 if (decor layers?) then (yes)
   :draw RAW_DECOR.pdf on top, unchanged
-  (Dwgs.User / Edge.Cuts);
+  (Edge.Cuts outline);
 endif
 :save INVERTED.pdf;
 stop
