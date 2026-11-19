@@ -1,0 +1,28 @@
+@startuml discovery
+skinparam shadowing false
+start
+partition "find_kicad_cli()" {
+  :environment variable KICAD_CLI;
+  :next to the running KiCad
+  (sys.executable folder, or KiCad.app/Contents/MacOS);
+  :kicad-cli on PATH;
+  :usual install folders
+  (Windows: Program Files\KiCad\10.0|9.0\bin,
+  macOS: /Applications/KiCad, Linux: /usr/bin, /usr/local/bin);
+  :first existing file;
+}
+partition "find_python()" {
+  if (KICAD_RELEASE_WIZARD_PYTHON set?) then (yes)
+    :use it;
+  else (no)
+    :probe py -3, python, python3 (Windows)
+    or python3, python (macOS / Linux),
+    then KiCad's bundled Python;
+    :each probe prints its version, sys.executable
+    and whether "import fitz" works;
+    :first interpreter with PyMuPDF,
+    else first Python 3 found;
+  endif
+}
+stop
+@enduml

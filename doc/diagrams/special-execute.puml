@@ -1,0 +1,18 @@
+@startuml special-execute
+skinparam shadowing false
+participant "kicad-cli jobset run" as K
+participant "shell\n(cmd.exe on Windows)" as S
+participant "<python>\n.scripts/release_jobs.py <job>" as J
+
+K -> K : create work dir for the output
+K -> S : command text\n(double quotes escaped)
+note right of K
+  cwd = project folder
+  env JOBSET_OUTPUT_WORK_PATH = work dir
+  ${KIPRJMOD} is not expanded in the text
+end note
+S -> J : start
+J -> J : write files into\nJOBSET_OUTPUT_WORK_PATH
+J --> K : exit code (≠ 0 → job failed)
+K -> K : copy / zip the work dir\nto the output path
+@enduml

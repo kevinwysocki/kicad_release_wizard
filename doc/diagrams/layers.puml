@@ -1,0 +1,39 @@
+@startuml layers
+skinparam shadowing false
+start
+:read release_config.json;
+:read the board layer table\n(canonical name, type, user name);
+repeat :next selected layer;
+  :file base = user name of the layer,\nor canonical name ("F.Cu" → F_Cu);
+  :decor = [Dwgs.User if "drawing layer"]\n      + [Edge.Cuts if "outline"];
+  if (SVG ticked?) then (yes)
+    :kicad-cli pcb export svg --mode-single
+    layer + decor, page size, no drawing sheet,
+    mirror, colour or black & white;
+  endif
+  if (DXF ticked?) then (yes)
+    :kicad-cli pcb export dxf --mode-single
+    layer + decor, mm, contours
+    (no mirror / colour in kicad-cli);
+  endif
+  if (PDF ticked?) then (yes)
+    if (invert?) then (yes)
+      :export the layer alone
+      (black & white, mirror);
+      :export decor alone
+      (black & white, mirror);
+      :pdf_tools.invert_pdf();
+    else (no)
+      :export layer + decor
+      (colour mode, mirror);
+    endif
+    if (rotate 180°?) then (yes)
+      :pdf_tools.rotate_pdf_180()
+      (applied after the mirror);
+    endif
+    :copy result to PDF/<base>.pdf;
+  endif
+repeat while (more layers?) is (yes)
+->no;
+stop
+@enduml

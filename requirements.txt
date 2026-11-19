@@ -1,0 +1,8 @@
+# Python packages needed by the helper scripts generated in <project>/.scripts/.
+# They run with the *system* Python (`py -3` or `python` on PATH),
+# NOT with KiCad's bundled Python.
+#
+#   py -3 -m pip install -r requirements.txt
+
+# PDF manipulation: black/white inversion, 180° rotation, drill map generation
+PyMuPDF>=1.23

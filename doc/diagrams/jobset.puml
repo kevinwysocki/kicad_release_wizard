@@ -1,0 +1,33 @@
+@startuml jobset
+skinparam shadowing false
+left to right direction
+
+rectangle "01_PCB_GRB → release/01_PCB/GRB" as grb {
+  card "pcb_gerbers\n<i>native, X2, 4.6 mm</i>" as g1
+  card "pcb_gerber_extensions\n<i>script: gerber_ext</i>" as g2
+  card "pcb_drill\n<i>native, Excellon</i>" as g3
+}
+rectangle "01_PCB_LAYERS → release/01_PCB" as lay {
+  card "pcb_layers\n<i>script: layers</i>\nPDF/ SVG/ DXF/" as l1
+  card "drill_map_pdf\n<i>script: drill_map</i>\nPDF/" as l2
+}
+rectangle "02_PCBA → release/02_PCBA" as pcba {
+  card "pcb_implantation\n<i>script: implantation</i>" as a1
+  card "bom_csv\n<i>native, fields from BOM tab</i>" as a2
+  card "pnp_csv\n<i>native</i>" as a3
+}
+rectangle "03_DOCS → release/03_DOCS" as docs {
+  card "erc\n<i>native</i>" as d1
+  card "drc\n<i>native, parity</i>" as d2
+  card "sch_pdf\n<i>script: sch_pdf</i>" as d3
+  card "pcb_pdf\n<i>script: pcb_pdf</i>" as d4
+}
+rectangle "04_MECA → release/04_MECA" as meca {
+  card "meca_step\n<i>native</i>" as m1
+}
+rectangle "GERBER (zip) → release/01_PCB/GRB/<project>_GERBER.zip" as zip {
+  card "pcb_gerbers" as z1
+  card "pcb_gerber_extensions" as z2
+  card "pcb_drill" as z3
+}
+@enduml

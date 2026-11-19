@@ -1,0 +1,51 @@
+@startuml generate
+skinparam shadowing false
+actor User
+participant "ReleaseWizardDialog" as D
+participant "platform_tools" as P
+participant "board_outline" as B
+participant "RunLogDialog" as R
+participant "kicad-cli\njobset run" as K
+participant "release_jobs.py\n(system Python)" as J
+participant "kicad-cli\nexport" as X
+
+User -> D : Generate
+activate D
+D -> D : validate selection\n(layers, BOM fields)
+D -> D : empty release/
+D -> D : copy job_scripts/*.py → .scripts/
+D -> D : save kicad_release_profile.json
+D -> P : find_kicad_cli()
+D -> P : find_python()
+P --> D : interpreter, has PyMuPDF
+opt a PDF layer is inverted
+  D -> B : write_board_outline(saved .kicad_pcb)
+  B --> D : .scripts/board_outline.json
+end
+D -> D : write .scripts/release_config.json
+D -> D : build_jobset() → release/kicad_release.kicad_jobset
+D -> R : ShowModal()
+deactivate D
+activate R
+R -> K : jobset run --file … <project>.kicad_pro
+activate K
+loop each output
+  K -> K : new work dir\n(JOBSET_OUTPUT_WORK_PATH)
+  loop each job of the output
+    alt native job (ERC, DRC, BOM, pos, drill, Gerbers, STEP)
+      K -> K : write into work dir
+    else special_execute
+      K -> J : <python> .scripts/release_jobs.py <job>
+      activate J
+      J -> X : pcb / sch export … into work dir
+      X --> J
+      J --> K : exit code
+      deactivate J
+    end
+  end
+  K -> K : copy (folder) or zip (archive)\nwork dir → output path
+end
+K --> R : stdout (streamed) + exit code
+deactivate K
+R --> User : live log, final status
+@enduml

@@ -1,0 +1,57 @@
+@startuml components
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+actor User
+
+package "KiCad PCB editor (embedded Python)" {
+  component "action_release_wizard.py\n<i>ActionPlugin</i>" as action
+  component "release_wizard_dialog.py\n<i>dialog, profile, jobset builder,\nlive run log</i>" as dialog
+  component "i18n.py\n<i>FR / EN strings</i>" as i18n
+  component "bom_fields.py\n<i>symbol fields discovery</i>" as bom
+  component "board_outline.py\n<i>exact board outline</i>" as outline
+  component "platform_tools.py\n<i>kicad-cli / Python discovery</i>" as plat
+}
+
+package "Project folder" {
+  file "kicad_release_profile.json" as profile
+  folder ".scripts/" {
+    file "release_jobs.py" as rj
+    file "pdf_tools.py" as pt
+    file "drill_map_pdf.py" as dm
+    file "release_config.json" as rc
+    file "board_outline.json" as bo
+  }
+  folder "release/" {
+    file "kicad_release.kicad_jobset" as jobset
+    file "01_PCB … 04_MECA" as outputs
+  }
+}
+
+node "kicad-cli jobset run" as runner
+node "System Python 3\n+ PyMuPDF" as py
+node "kicad-cli\n(export commands)" as cli
+
+User --> action : toolbar button
+action --> dialog
+dialog ..> i18n
+dialog ..> bom
+dialog ..> outline
+dialog ..> plat
+dialog --> profile : save / load
+dialog --> rj : copy job_scripts/*.py
+dialog --> rc : write settings
+outline --> bo : write
+dialog --> jobset : build_jobset()
+dialog --> runner : subprocess,\nlive log
+
+runner --> jobset : read
+runner --> outputs : native jobs,\ncopy of each work dir
+runner --> py : special_execute\n<python> .scripts/release_jobs.py <job>
+py --> rj
+rj ..> pt : PDF inversion / rotation
+rj ..> dm : drill map
+rj --> rc : read
+rj --> bo : read
+rj --> cli : pcb / sch export …
+@enduml

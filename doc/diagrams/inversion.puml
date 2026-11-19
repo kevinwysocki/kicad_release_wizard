@@ -1,0 +1,30 @@
+@startuml inversion
+skinparam shadowing false
+|Plugin (KiCad)|
+start
+:pcbnew.LoadBoard(saved .kicad_pcb);
+:BOARD.GetBoardPolygonOutlines()
+→ outlines + holes (cut-outs), nm;
+:write .scripts/board_outline.json (mm);
+|release_jobs.py / pdf_tools.py|
+:kicad-cli: layer alone → RAW_LAYER.pdf (B&W);
+:map outline mm → PDF points
+x = mm × 72 / 25.4, y likewise
+(mirror: x = page width − x);
+if (outline inside the page?) then (no)
+  :error: plot placement
+  does not match the board;
+  stop
+endif
+:snapshot the page drawings;
+:fill each outline in black
+(outer ring + holes, even-odd rule);
+:repaint in white every original
+black drawing touching the board;
+if (decor layers?) then (yes)
+  :draw RAW_DECOR.pdf on top, unchanged
+  (Dwgs.User / Edge.Cuts);
+endif
+:save INVERTED.pdf;
+stop
+@enduml

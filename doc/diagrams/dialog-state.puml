@@ -1,0 +1,13 @@
+@startuml dialog-state
+skinparam shadowing false
+[*] --> Loaded : plugin opened
+Loaded : layers read from .kicad_pcb
+Loaded : BOM fields read from .kicad_sch
+Loaded : kicad_release_profile.json applied
+Loaded --> Loaded : edit tabs /\nsave or load profile
+Loaded --> Generating : Generate
+Generating --> Loaded : validation error\n(message box)
+Generating --> Running : files written
+Running : RunLogDialog streams kicad-cli
+Running --> Loaded : Close / Stop
+@enduml

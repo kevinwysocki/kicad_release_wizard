@@ -1,0 +1,23 @@
+@startuml bom-fields
+skinparam shadowing false
+start
+:list *.kicad_sch in the project (all sheets);
+repeat :next schematic file;
+  :tokenise the s-expression and walk
+  the direct children of (kicad_sch …);
+  :keep (symbol …) instances only
+  (lib_symbols and sheets are skipped);
+  :collect their (property "Name" …),
+  except ki_* and the standard fields;
+repeat while (more files?)
+:rows = standard fields + custom fields
++ generated fields (${ITEM_NUMBER}, ${QUANTITY}, ${DNP}…);
+:tick #, Reference, Value, Qty, Footprint
++ custom fields looking like manufacturer / MPN;
+if (profile has bom_fields?) then (yes)
+  :keep the saved order, labels, ticks and grouping;
+  :drop fields no longer in the project;
+  :append new fields unticked;
+endif
+stop
+@enduml
